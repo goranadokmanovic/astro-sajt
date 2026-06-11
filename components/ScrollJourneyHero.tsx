@@ -79,12 +79,13 @@ function PlanetCard({
   const isLeft = stop.side === "left";
   return (
     <motion.div
-      className={`absolute top-1/2 -translate-y-1/2 max-w-sm pointer-events-none px-8 md:px-14 ${
-        isLeft ? "left-0" : "right-0"
+      className={`absolute top-1/2 -translate-y-1/2 w-full max-w-md pointer-events-none px-8 md:px-12 ${
+        isLeft ? "left-12" : "right-12"
       }`}
+      initial={{ opacity: 0, x: isLeft ? -32 : 32 }}
       animate={{
         opacity: active ? 1 : 0,
-        x: active ? 0 : isLeft ? -28 : 28,
+        x: active ? 0 : isLeft ? -32 : 32,
       }}
       transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
     >
@@ -122,7 +123,7 @@ export default function ScrollJourneyHero() {
     offset: ["start start", "end end"],
   });
 
-  const fadeOpacity = useTransform(scrollYProgress, [0.875, 0.98], [0, 1]);
+  const fadeOpacity = useTransform(scrollYProgress, [0.96, 1.0], [0, 1]);
 
   useMotionValueEvent(scrollYProgress, "change", (p) => {
     scrollState.progress = p;

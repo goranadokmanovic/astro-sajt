@@ -54,8 +54,7 @@ type PlanetConfig = {
 };
 
 const SUN_RADIUS = 1.6;
-// Outer 3 orbits scaled in by ~12-15% so full orbits stay inside the wide-view frustum.
-const ORBIT_SEMI_MAJOR = [3.2, 4.6, 6.0, 7.4, 8.0, 10.0, 13.4, 13.0] as const;
+const ORBIT_SEMI_MAJOR = [3.2, 4.6, 6.0, 7.4, 9.2, 11.4, 13.4, 15.2] as const;
 
 const PLANETS: PlanetConfig[] = [
   {
@@ -127,8 +126,8 @@ const PLANETS: PlanetConfig[] = [
   {
     radius: 0.51,
     texture: "uranus",
-    orbitA: 12.5,
-    orbitB: 12.5 * 0.8,
+    orbitA: 14.8,
+    orbitB: 14.8 * 0.8,
     orbitSpeed: 0.12,
     spinSpeed: 0.8,
     phase: 6 * 2.4,
@@ -159,13 +158,14 @@ const _camDesiredPos = new THREE.Vector3();
 const _camDesiredLook = new THREE.Vector3();
 const _planetWorldPos = new THREE.Vector3();
 
-// Camera offsets: small bodies (Moon, Mercury) ×0.65; mid ×0.70; Saturn ×0.78 (ring clearance).
+// Camera offsets — ~30° above the orbital plane so frozen planets on the orbital plane
+// drop below the view axis and leave dark sky as the dominant background (hero portrait).
 const SUN_CAM_OFF     = new THREE.Vector3( 2.45, 1.4,  4.2 );
-const MOON_CAM_OFF    = new THREE.Vector3( 0.58, 0.26, 1.8 );
-const MERCURY_CAM_OFF = new THREE.Vector3(-1.6,  0.32, 2.25);
-const VENUS_CAM_OFF   = new THREE.Vector3( 1.75, 0.42, 2.65);
-const MARS_CAM_OFF    = new THREE.Vector3(-1.75, 0.56, 2.9 );
-const SATURN_CAM_OFF  = new THREE.Vector3( 2.5,  1.4,  5.1 );
+const MOON_CAM_OFF    = new THREE.Vector3( 0.5,  0.9,  1.6 ); // Earth prominent behind Moon
+const MERCURY_CAM_OFF = new THREE.Vector3(-1.3,  1.6,  1.8 ); // elevation ~36° — Venus exits FOV
+const VENUS_CAM_OFF   = new THREE.Vector3( 1.5,  1.8,  2.2 ); // elevation ~36°
+const MARS_CAM_OFF    = new THREE.Vector3(-1.5,  1.8,  2.8 ); // elevation ~31°
+const SATURN_CAM_OFF  = new THREE.Vector3( 2.2,  2.2,  5.2 ); // elevation ~22°; rings fill frame
 const PULLBACK_POS    = new THREE.Vector3( 0,    4.0,  22.0); // matches opening — journey is a circle
 
 function computeDesiredCamera(p: number) {
