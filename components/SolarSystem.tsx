@@ -639,19 +639,33 @@ function createSaturnRingTexture(): THREE.CanvasTexture {
 }
 
 // ─── 3D Components ────────────────────────────────────────────────────────────
+
+// Returns 1.0 when camera is close (stations), fades toward MIN at wide-view distance.
+// Ensures overlapping mist planes don't accumulate into a "purple wall" at the opening shot.
+function getDistanceFade(distFromOrigin: number): number {
+  const CLOSE = 14; // Saturn station camera is ~13.5 units from origin — stays at 1.0
+  const FAR = 20;   // transition completes before reaching wide-view distance (~22.4)
+  const MIN = 0.38;
+  if (distFromOrigin <= CLOSE) return 1.0;
+  if (distFromOrigin >= FAR) return MIN;
+  return 1.0 - ((distFromOrigin - CLOSE) / (FAR - CLOSE)) * (1.0 - MIN);
+}
+
 function NebulaCloud({ config }: { config: NebulaConfig }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const basePosition = useMemo(
     () => new THREE.Vector3(...config.position),
     [config.position],
   );
+  // Pre-initialise at wide-view value so there is no flash on first render.
+  const currentOpacity = useRef(config.opacity * 0.38);
 
   const texture = useMemo(
     () => createNebulaTexture(config.inner, config.mid, config.outer),
     [config.inner, config.mid, config.outer],
   );
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     if (!meshRef.current) return;
     const t = state.clock.elapsedTime;
     meshRef.current.position.x =
@@ -661,6 +675,10 @@ function NebulaCloud({ config }: { config: NebulaConfig }) {
     meshRef.current.position.z = basePosition.z;
     meshRef.current.rotation.z =
       config.rotation + Math.sin(t * 0.04 + config.driftPhase) * 0.08;
+
+    const target = config.opacity * getDistanceFade(state.camera.position.length());
+    currentOpacity.current = THREE.MathUtils.damp(currentOpacity.current, target, 3, delta);
+    (meshRef.current.material as THREE.MeshBasicMaterial).opacity = currentOpacity.current;
   });
 
   if (!texture) return null;
@@ -676,7 +694,7 @@ function NebulaCloud({ config }: { config: NebulaConfig }) {
       <meshBasicMaterial
         map={texture}
         transparent
-        opacity={config.opacity}
+        opacity={config.opacity * 0.38}
         blending={THREE.AdditiveBlending}
         depthWrite={false}
       />
@@ -687,13 +705,14 @@ function NebulaCloud({ config }: { config: NebulaConfig }) {
 function VeilCloud({ config }: { config: VeilConfig }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const basePos = useMemo(() => new THREE.Vector3(...config.position), [config.position]);
+  const currentOpacity = useRef(0);
 
   const texture = useMemo(
     () => createNebulaTexture(config.inner, config.mid, config.outer),
     [config.inner, config.mid, config.outer],
   );
 
-  useFrame(({ camera, clock }) => {
+  useFrame(({ camera, clock }, delta) => {
     if (!meshRef.current) return;
     const t = clock.elapsedTime;
     meshRef.current.position.x = basePos.x + Math.sin(t * config.driftSpeed + config.driftPhase) * 1.8;
@@ -711,7 +730,9 @@ function VeilCloud({ config }: { config: VeilConfig }) {
     } else {
       o = Math.max(0, 1 - (dist - peakDist) / (farDist - peakDist)) * maxOpacity;
     }
-    (meshRef.current.material as THREE.MeshBasicMaterial).opacity = o;
+    const target = o * getDistanceFade(camera.position.length());
+    currentOpacity.current = THREE.MathUtils.damp(currentOpacity.current, target, 3, delta);
+    (meshRef.current.material as THREE.MeshBasicMaterial).opacity = currentOpacity.current;
   });
 
   if (!texture) return null;
