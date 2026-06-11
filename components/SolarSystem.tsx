@@ -150,7 +150,7 @@ const PLANETS: PlanetConfig[] = [
 
 // ─── Moon ────────────────────────────────────────────────────────────────────
 const MOON_RADIUS = 0.48 * 0.20; // ~0.096 — ~20 % of Earth radius (clear companion, not twin)
-const MOON_ORBIT_RADIUS = 1.1; // ~2.3× Earth's scene radius (0.48) — Earth visible in frame
+const MOON_ORBIT_RADIUS = 0.48 * 2.2; // 1.056 — 2.2× Earth radius; Earth prominent behind Moon
 const MOON_ORBIT_SPEED = 1.8;
 
 // ─── Camera journey ───────────────────────────────────────────────────────────
@@ -301,52 +301,102 @@ type NebulaConfig = {
 
 const NEBULAE: NebulaConfig[] = [
   {
-    // Upper-left — slightly denser patch, largest wipe
     position: [-18, 6, -22],
     scale: 82,
     rotation: 0.4,
-    inner: "#3a1a5c",
-    mid: "#200f3a",
+    inner: "#5c2888",
+    mid: "#2d1550",
     outer: "#0d0620",
-    opacity: 0.07,
+    opacity: 0.12,
     driftPhase: 0,
     driftSpeed: 0.12,
   },
   {
-    // Right side — barely perceptible wisp
     position: [22, -4, -18],
     scale: 70,
     rotation: -0.6,
-    inner: "#2a1448",
-    mid: "#160a2c",
+    inner: "#4a2070",
+    mid: "#221040",
     outer: "#090412",
-    opacity: 0.05,
+    opacity: 0.09,
     driftPhase: 1.8,
     driftSpeed: 0.09,
   },
   {
-    // Upper centre-right, furthest back — widest thin wash, second denser zone
     position: [8, 12, -30],
     scale: 96,
     rotation: 0.2,
-    inner: "#3d1f5c",
-    mid: "#221040",
+    inner: "#6b3fa0",
+    mid: "#3d2060",
     outer: "#0f0624",
-    opacity: 0.08,
+    opacity: 0.14,
     driftPhase: 3.2,
     driftSpeed: 0.07,
   },
   {
-    // Lower-left — ghost layer, near-invisible
     position: [-10, -8, -26],
     scale: 62,
     rotation: 1.1,
-    inner: "#2a1448",
-    mid: "#170b30",
+    inner: "#3d1f5c",
+    mid: "#1f1040",
     outer: "#0a0518",
-    opacity: 0.04,
+    opacity: 0.08,
     driftPhase: 4.5,
     driftSpeed: 0.1,
+  },
+];
+
+type VeilConfig = {
+  position: [number, number, number];
+  scale: number;
+  rotation: number;
+  inner: string;
+  mid: string;
+  outer: string;
+  maxOpacity: number;
+  nearFade: number;
+  driftPhase: number;
+  driftSpeed: number;
+};
+
+// Fly-through wisps along the camera path (z ≈ 9–14 from origin).
+// Opacity is distance-driven so they swell as the camera approaches and dissolve on clip.
+const VEILS: VeilConfig[] = [
+  {
+    position: [4, 2, 9],
+    scale: 60,
+    rotation: 0.15,
+    inner: "#4a2070",
+    mid: "#221040",
+    outer: "#0d0620",
+    maxOpacity: 0.13,
+    nearFade: 2.5,
+    driftPhase: 0.8,
+    driftSpeed: 0.05,
+  },
+  {
+    position: [-5, -2, 13],
+    scale: 72,
+    rotation: -0.2,
+    inner: "#3d1f5c",
+    mid: "#1f1040",
+    outer: "#0a0518",
+    maxOpacity: 0.11,
+    nearFade: 2.5,
+    driftPhase: 3.5,
+    driftSpeed: 0.04,
+  },
+  {
+    position: [8, -5, 11],
+    scale: 50,
+    rotation: 0.9,
+    inner: "#5c2888",
+    mid: "#2d1550",
+    outer: "#0d0620",
+    maxOpacity: 0.10,
+    nearFade: 2.0,
+    driftPhase: 6.1,
+    driftSpeed: 0.06,
   },
 ];
 
@@ -634,11 +684,60 @@ function NebulaCloud({ config }: { config: NebulaConfig }) {
   );
 }
 
+function VeilCloud({ config }: { config: VeilConfig }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const basePos = useMemo(() => new THREE.Vector3(...config.position), [config.position]);
+
+  const texture = useMemo(
+    () => createNebulaTexture(config.inner, config.mid, config.outer),
+    [config.inner, config.mid, config.outer],
+  );
+
+  useFrame(({ camera, clock }) => {
+    if (!meshRef.current) return;
+    const t = clock.elapsedTime;
+    meshRef.current.position.x = basePos.x + Math.sin(t * config.driftSpeed + config.driftPhase) * 1.8;
+    meshRef.current.position.y = basePos.y + Math.cos(t * config.driftSpeed * 0.7 + config.driftPhase) * 1.2;
+
+    const dist = camera.position.distanceTo(meshRef.current.position);
+    const { nearFade, maxOpacity } = config;
+    const peakDist = nearFade * 3;
+    const farDist = 28;
+    let o: number;
+    if (dist < nearFade) {
+      o = (dist / nearFade) ** 2 * maxOpacity * 0.15;
+    } else if (dist <= peakDist) {
+      o = ((dist - nearFade) / (peakDist - nearFade)) * maxOpacity;
+    } else {
+      o = Math.max(0, 1 - (dist - peakDist) / (farDist - peakDist)) * maxOpacity;
+    }
+    (meshRef.current.material as THREE.MeshBasicMaterial).opacity = o;
+  });
+
+  if (!texture) return null;
+
+  return (
+    <mesh ref={meshRef} position={config.position} rotation={[0, 0, config.rotation]} renderOrder={-2}>
+      <planeGeometry args={[config.scale, config.scale]} />
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        opacity={0}
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
 function CosmicBackdrop() {
   return (
     <group renderOrder={-1}>
       {NEBULAE.map((nebula, index) => (
         <NebulaCloud key={`nebula-${index}`} config={nebula} />
+      ))}
+      {VEILS.map((veil, index) => (
+        <VeilCloud key={`veil-${index}`} config={veil} />
       ))}
 
       <Stars
