@@ -2,7 +2,7 @@
 // and the Three.js canvas (read inside useFrame — no setState per frame).
 // Plain object, no THREE imports, safe to import from any module boundary.
 
-export const scrollState = { progress: 0 }
+export const scrollState = { progress: 0, act2Progress: 0 }
 
 export const planetPositions = {
   sun:     { x: 0, y: 0, z: 0 },

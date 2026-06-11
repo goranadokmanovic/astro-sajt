@@ -7,6 +7,7 @@ import { BlendFunction } from "postprocessing";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { scrollState, planetPositions } from "@/lib/scrollState";
+import { CONSTELLATIONS, ELEMENT_GROUPS } from "@/lib/zodiac";
 
 const BACKGROUND = "#0a0612";
 const BASE_TILT = (25 * Math.PI) / 180;
@@ -167,6 +168,40 @@ const VENUS_CAM_OFF   = new THREE.Vector3( 1.5,  1.8,  2.2 ); // elevation ~36°
 const MARS_CAM_OFF    = new THREE.Vector3(-1.5,  1.8,  2.8 ); // elevation ~31°
 const SATURN_CAM_OFF  = new THREE.Vector3( 2.2,  2.2,  5.2 ); // elevation ~22°; rings fill frame
 const PULLBACK_POS    = new THREE.Vector3( 0,    4.0,  22.0); // matches opening — journey is a circle
+
+// ─── Act 2 / Zodiac camera positions ─────────────────────────────────────────
+const ZODIAC_CAM_POS  = new THREE.Vector3(0,  35, 65);
+const ZODIAC_CAM_LOOK = new THREE.Vector3(0,  14,  0);
+const FINALE_CAM_POS  = new THREE.Vector3(0,  50, 90);
+const _ORIGIN         = new THREE.Vector3(0,   0,  0);
+
+const ZODIAC_RING_RADIUS = 25;
+const ZODIAC_Y           = 14;
+const ZODIAC_SPREAD      = 3.0;
+
+// Pre-computed ring positions/tangents — module-level, no per-frame GC.
+const _CONSTELLATION_CENTERS = Array.from({ length: 12 }, (_, i) => {
+  const angle = (i / 12) * Math.PI * 2;
+  return new THREE.Vector3(
+    ZODIAC_RING_RADIUS * Math.cos(angle),
+    ZODIAC_Y,
+    ZODIAC_RING_RADIUS * Math.sin(angle),
+  );
+});
+const _CONSTELLATION_TANGENTS = Array.from({ length: 12 }, (_, i) => {
+  const angle = (i / 12) * Math.PI * 2;
+  return new THREE.Vector3(-Math.sin(angle), 0, Math.cos(angle));
+});
+
+// Act 2 scroll ranges in act2Progress (0–1 over last 400vh of 1000vh)
+const ACT2_ELEMENT_STARTS = [0, 0.1875, 0.375, 0.5625] as const;
+const ACT2_ELEMENT_ENDS   = [0.1875, 0.375, 0.5625, 0.75] as const;
+const ACT2_FINALE_START   = 0.75;
+const ACT2_FINALE_END     = 0.9375;
+const ACT2_ELEMENTS       = ['VATRA', 'ZEMLJA', 'VAZDUH', 'VODA'] as const;
+
+// Thin torus ring for the finale — module-level geometry (no WebGL needed for construction).
+const _zodiacRingGeo = new THREE.TorusGeometry(ZODIAC_RING_RADIUS, 0.06, 8, 128);
 
 function computeDesiredCamera(p: number) {
   const pp = planetPositions;
@@ -651,6 +686,36 @@ function getDistanceFade(distFromOrigin: number): number {
   return 1.0 - ((distFromOrigin - CLOSE) / (FAR - CLOSE)) * (1.0 - MIN);
 }
 
+// Returns 0–1 opacity for constellation ci at act2Progress p.
+function getZodiacOpacity(ci: number, act2p: number): number {
+  if (act2p <= 0) return 0;
+  // Exit fade (after finale)
+  if (act2p >= ACT2_FINALE_END) {
+    return Math.max(0, 1 - (act2p - ACT2_FINALE_END) / (1 - ACT2_FINALE_END));
+  }
+  // Finale: all fully lit
+  if (act2p >= ACT2_FINALE_START) {
+    const t = (act2p - ACT2_FINALE_START) / (ACT2_FINALE_END - ACT2_FINALE_START);
+    return Math.min(t * 2, 1);
+  }
+  // Element stations: sequential light-up within each element group
+  for (let ei = 0; ei < 4; ei++) {
+    const start = ACT2_ELEMENT_STARTS[ei];
+    const end   = ACT2_ELEMENT_ENDS[ei];
+    if (act2p < start || act2p >= end) continue;
+    const elGroup  = ELEMENT_GROUPS[ACT2_ELEMENTS[ei]];
+    const localIdx = elGroup.indexOf(ci);
+    if (localIdx === -1) return 0.08;  // other elements — dim
+    const sub       = (act2p - start) / (end - start);
+    const slotStart = localIdx / 3;
+    const slotEnd   = (localIdx + 1) / 3;
+    if (sub < slotStart) return 0.12;
+    if (sub >= slotEnd)  return 1.0;
+    return 0.12 + ((sub - slotStart) * 3) * 0.88;
+  }
+  return 0.05;
+}
+
 function NebulaCloud({ config }: { config: NebulaConfig }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const basePosition = useMemo(
@@ -807,6 +872,121 @@ function CosmicBackdrop() {
         opacity={0.14}
         position={[-6, -3, -14]}
       />
+    </group>
+  );
+}
+
+// ─── Act 2 — Zodiac Scene ─────────────────────────────────────────────────────
+
+function ZodiacConstellation({ ci }: { ci: number }) {
+  const def       = CONSTELLATIONS[ci];
+  const pointsRef = useRef<THREE.Points>(null);
+  const linesRef  = useRef<THREE.LineSegments>(null);
+
+  const { starGeo, lineGeo } = useMemo(() => {
+    const center  = _CONSTELLATION_CENTERS[ci];
+    const tangent = _CONSTELLATION_TANGENTS[ci];
+
+    const sp = new Float32Array(def.stars.length * 3);
+    for (let i = 0; i < def.stars.length; i++) {
+      const [lx, ly] = def.stars[i];
+      sp[i * 3]     = center.x + tangent.x * lx * ZODIAC_SPREAD;
+      sp[i * 3 + 1] = center.y + ly * ZODIAC_SPREAD;
+      sp[i * 3 + 2] = center.z + tangent.z * lx * ZODIAC_SPREAD;
+    }
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute("position", new THREE.BufferAttribute(sp, 3));
+
+    const lp = new Float32Array(def.lines.length * 6);
+    for (let i = 0; i < def.lines.length; i++) {
+      const [a, b] = def.lines[i];
+      lp[i * 6]     = sp[a * 3];     lp[i * 6 + 1] = sp[a * 3 + 1]; lp[i * 6 + 2] = sp[a * 3 + 2];
+      lp[i * 6 + 3] = sp[b * 3];     lp[i * 6 + 4] = sp[b * 3 + 1]; lp[i * 6 + 5] = sp[b * 3 + 2];
+    }
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute("position", new THREE.BufferAttribute(lp, 3));
+
+    return { starGeo: sg, lineGeo: lg };
+  }, [ci, def]);
+
+  useEffect(() => () => { starGeo.dispose(); lineGeo.dispose(); }, [starGeo, lineGeo]);
+
+  const twinklePhase = (ci * 2.71828) % (Math.PI * 2);
+
+  useFrame((state, delta) => {
+    const base    = getZodiacOpacity(ci, scrollState.act2Progress);
+    const twinkle = 0.88 + 0.12 * Math.sin(state.clock.elapsedTime * 1.4 + twinklePhase);
+    if (pointsRef.current) {
+      const mat = pointsRef.current.material as THREE.PointsMaterial;
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle, 5, delta);
+    }
+    if (linesRef.current) {
+      const mat = linesRef.current.material as THREE.LineBasicMaterial;
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * 0.45, 5, delta);
+    }
+  });
+
+  return (
+    <group>
+      <points ref={pointsRef} geometry={starGeo}>
+        <pointsMaterial
+          size={0.45}
+          sizeAttenuation
+          color="#f5e4b0"
+          transparent
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </points>
+      {def.lines.length > 0 && (
+        <lineSegments ref={linesRef} geometry={lineGeo}>
+          <lineBasicMaterial
+            color="#d4a843"
+            transparent
+            opacity={0}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </lineSegments>
+      )}
+    </group>
+  );
+}
+
+function ZodiacCircle() {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current) return;
+    const act2p = scrollState.act2Progress;
+    const mat   = meshRef.current.material as THREE.MeshBasicMaterial;
+    if (act2p >= ACT2_FINALE_START && act2p < ACT2_FINALE_END) {
+      const t  = (act2p - ACT2_FINALE_START) / (ACT2_FINALE_END - ACT2_FINALE_START);
+      const ss = t * t * (3 - 2 * t);
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, ss * 0.65, 3, delta);
+      meshRef.current.rotation.z += delta * 0.04;
+    } else {
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, 0, 3, delta);
+    }
+  });
+
+  return (
+    <mesh ref={meshRef} geometry={_zodiacRingGeo} position={[0, ZODIAC_Y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <meshBasicMaterial color="#d4a843" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+    </mesh>
+  );
+}
+
+function ZodiacScene() {
+  return (
+    <group>
+      {CONSTELLATIONS.map((_, ci) => (
+        <ZodiacConstellation key={`z-${ci}`} ci={ci} />
+      ))}
+      <ZodiacCircle />
     </group>
   );
 }
@@ -1129,8 +1309,31 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
     }
 
     // Camera journey — drives camera position for scroll > 1 %
-    if (progress > 0.01) {
+    const act2p = scrollState.act2Progress;
+    if (progress > 0.01 || act2p > 0) {
       computeDesiredCamera(progress);
+
+      // Act 2 override — seamless outward push from Saturn pullback toward zodiac ring
+      if (act2p > 0) {
+        if (act2p < 0.15) {
+          const t  = act2p / 0.15;
+          const ss = t * t * (3 - 2 * t);
+          _camDesiredPos.lerpVectors(PULLBACK_POS, ZODIAC_CAM_POS, ss);
+          _camDesiredLook.lerpVectors(_ORIGIN, ZODIAC_CAM_LOOK, ss);
+        } else if (act2p < ACT2_FINALE_START) {
+          _camDesiredPos.copy(ZODIAC_CAM_POS);
+          _camDesiredLook.copy(ZODIAC_CAM_LOOK);
+        } else if (act2p < ACT2_FINALE_END) {
+          const t  = (act2p - ACT2_FINALE_START) / (ACT2_FINALE_END - ACT2_FINALE_START);
+          const ss = t * t * (3 - 2 * t);
+          _camDesiredPos.lerpVectors(ZODIAC_CAM_POS, FINALE_CAM_POS, ss);
+          _camDesiredLook.copy(ZODIAC_CAM_LOOK);
+        } else {
+          _camDesiredPos.copy(FINALE_CAM_POS);
+          _camDesiredLook.copy(ZODIAC_CAM_LOOK);
+        }
+      }
+
       const lambda = 1.5;
       camPos.current.x  = THREE.MathUtils.damp(camPos.current.x,  _camDesiredPos.x,  lambda, delta);
       camPos.current.y  = THREE.MathUtils.damp(camPos.current.y,  _camDesiredPos.y,  lambda, delta);
@@ -1180,6 +1383,8 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
           <Planet key={`planet-${index}`} config={planet} textures={textures} />
         ))}
       </group>
+
+      <ZodiacScene />
 
       <EffectComposer multisampling={0}>
         <Bloom intensity={0.7} luminanceThreshold={0.85} mipmapBlur />
