@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Line, Sparkles, Stars, Trail, useTexture } from "@react-three/drei";
+import { Sparkles, Stars, useTexture } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -21,10 +21,11 @@ const TEXTURE_PATHS = {
   mars: "/textures/planets/mars.jpg",
   jupiter: "/textures/planets/jupiter.jpg",
   saturn: "/textures/planets/saturn.jpg",
-  saturnRing: "/textures/planets/saturn_ring_alpha.png",
   uranus: "/textures/planets/uranus.jpg",
   neptune: "/textures/planets/neptune.jpg",
 } as const;
+
+const AMBIENT_INTENSITY = 0.55; // Purple fill only; keep bloom reserved for the sun.
 
 type TextureKey = keyof typeof TEXTURE_PATHS;
 type LoadedTextures = Record<TextureKey, THREE.Texture>;
@@ -45,8 +46,8 @@ type PlanetConfig = {
   orbitSpeed: number;
   spinSpeed: number;
   phase: number;
-  hasRing?: boolean;
-  trail?: boolean;
+  yOffset: number;
+  inclination: number;
 };
 
 const SUN_RADIUS = 1.6;
@@ -61,6 +62,8 @@ const PLANETS: PlanetConfig[] = [
     orbitSpeed: 0.85,
     spinSpeed: 1.2,
     phase: 0 * 2.4,
+    yOffset: -0.5,
+    inclination: 0.02,
   },
   {
     radius: 0.42,
@@ -70,6 +73,8 @@ const PLANETS: PlanetConfig[] = [
     orbitSpeed: 0.62,
     spinSpeed: 0.9,
     phase: 1 * 2.4,
+    yOffset: 0.4,
+    inclination: -0.04,
   },
   {
     radius: 0.48,
@@ -79,6 +84,8 @@ const PLANETS: PlanetConfig[] = [
     orbitSpeed: 0.5,
     spinSpeed: 1.0,
     phase: 2 * 2.4,
+    yOffset: -0.6,
+    inclination: 0.05,
   },
   {
     radius: 0.4,
@@ -88,6 +95,8 @@ const PLANETS: PlanetConfig[] = [
     orbitSpeed: 0.4,
     spinSpeed: 1.1,
     phase: 3 * 2.4,
+    yOffset: 0.5,
+    inclination: -0.03,
   },
   {
     radius: 1.1,
@@ -97,7 +106,8 @@ const PLANETS: PlanetConfig[] = [
     orbitSpeed: 0.22,
     spinSpeed: 1.8,
     phase: 4 * 2.4,
-    trail: true,
+    yOffset: -1.2,
+    inclination: -0.07,
   },
   {
     radius: 0.85,
@@ -107,17 +117,19 @@ const PLANETS: PlanetConfig[] = [
     orbitSpeed: 0.17,
     spinSpeed: 1.4,
     phase: 5 * 2.4,
-    hasRing: true,
-    trail: true,
+    yOffset: 1.2,
+    inclination: 0.07,
   },
   {
-    radius: 0.65,
+    radius: 0.51,
     texture: "uranus",
-    orbitA: ORBIT_SEMI_MAJOR[6],
-    orbitB: ORBIT_SEMI_MAJOR[6] * 0.8,
+    orbitA: 14.8,
+    orbitB: 14.8 * 0.8,
     orbitSpeed: 0.12,
     spinSpeed: 0.8,
     phase: 6 * 2.4,
+    yOffset: -0.6,
+    inclination: 0.04,
   },
   {
     radius: 0.62,
@@ -127,13 +139,31 @@ const PLANETS: PlanetConfig[] = [
     orbitSpeed: 0.09,
     spinSpeed: 0.7,
     phase: 7 * 2.4,
-    trail: true,
+    yOffset: 0.9,
+    inclination: -0.06,
   },
 ];
 
-const SATURN_RING_INNER = 1.4;
-const SATURN_RING_OUTER = 2.2;
-const SATURN_GROUP_TILT = 0.4;
+const SATURN_GROUP_TILT = 0.45;
+
+const PROCEDURAL_RING_BANDS = [
+  { inner: 1.4, outer: 1.55, color: "#d9c49a", opacity: 0.5 },
+  { inner: 1.58, outer: 1.78, color: "#cdb285", opacity: 0.4 },
+  { inner: 1.82, outer: 2.0, color: "#d4bc92", opacity: 0.45 },
+  { inner: 2.03, outer: 2.15, color: "#c4ad7e", opacity: 0.3 },
+  { inner: 2.18, outer: 2.26, color: "#bfa878", opacity: 0.18 },
+] as const;
+
+const PLANET_TEXTURE_KEYS = [
+  "mercury",
+  "venus",
+  "earth",
+  "mars",
+  "jupiter",
+  "saturn",
+  "uranus",
+  "neptune",
+] as const;
 
 type NebulaConfig = {
   position: [number, number, number];
@@ -199,11 +229,28 @@ function configureTexture(texture: THREE.Texture) {
   texture.anisotropy = 4;
 }
 
+function isTextureLoaded(texture: THREE.Texture | undefined) {
+  const image = texture?.image as HTMLImageElement | undefined;
+  return Boolean(texture?.uuid && image && image.width > 0 && image.height > 0);
+}
+
+function logTextureAudit(textures: LoadedTextures) {
+  console.group("[SolarSystem] Planet texture audit");
+  for (const key of PLANET_TEXTURE_KEYS) {
+    const loaded = isTextureLoaded(textures[key]);
+    console.log(
+      `${key}: ${loaded ? "map loaded" : "FLAT (no map)"} → ${TEXTURE_PATHS[key]}`,
+    );
+  }
+  console.groupEnd();
+}
+
 function usePlanetTextures(): LoadedTextures {
   const textures = useTexture(TEXTURE_PATHS);
 
   useEffect(() => {
     Object.values(textures).forEach(configureTexture);
+    logTextureAudit(textures);
   }, [textures]);
 
   return textures;
@@ -233,6 +280,34 @@ function createNebulaTexture(inner: string, mid: string, outer: string) {
   ctx.fillRect(0, 0, size, size);
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function createUranusBodyTexture() {
+  const width = 4;
+  const height = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, "#1a3535");
+  gradient.addColorStop(0.5, "#2a5f5f");
+  gradient.addColorStop(1, "#1a3535");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  // 4-px-wide canvas collapses to a 1×1 average mip almost immediately;
+  // disable mipmaps so the full gradient is always sampled.
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
   texture.needsUpdate = true;
   return texture;
 }
@@ -267,7 +342,7 @@ function createSunGlowTexture() {
 }
 
 function createSaturnRingGeometry(innerR: number, outerR: number) {
-  const geo = new THREE.RingGeometry(innerR, outerR, 128, 1);
+  const geo = new THREE.RingGeometry(innerR, outerR, 128);
   const pos = geo.attributes.position;
   const uv = geo.attributes.uv;
 
@@ -278,30 +353,30 @@ function createSaturnRingGeometry(innerR: number, outerR: number) {
     uv.setXY(i, (r - innerR) / (outerR - innerR), 0.5);
   }
 
+  uv.needsUpdate = true;
+  geo.computeBoundingSphere();
+  if (geo.boundingSphere) {
+    geo.boundingSphere.center.set(0, 0, 0);
+    geo.boundingSphere.radius = outerR;
+  }
   return geo;
 }
 
-function createEllipsePoints(a: number, b: number, segments: number): THREE.Vector3[] {
-  const points: THREE.Vector3[] = [];
-  for (let i = 0; i <= segments; i++) {
-    const t = (i / segments) * Math.PI * 2;
-    points.push(new THREE.Vector3(a * Math.cos(t), 0, b * Math.sin(t)));
-  }
-  return points;
-}
-
-function OrbitPath({ a, b }: { a: number; b: number }) {
-  const points = useMemo(() => createEllipsePoints(a, b, 128), [a, b]);
-
-  return (
-    <Line
-      points={points}
-      color="#d4a843"
-      transparent
-      opacity={0.2}
-      lineWidth={0.6}
-    />
-  );
+function createSaturnRingBands(planetRadius: number) {
+  return PROCEDURAL_RING_BANDS.map((band) => ({
+    geometry: createSaturnRingGeometry(
+      planetRadius * band.inner,
+      planetRadius * band.outer,
+    ),
+    material: new THREE.MeshBasicMaterial({
+      color: band.color,
+      transparent: true,
+      opacity: band.opacity,
+      side: THREE.DoubleSide,
+      depthWrite: true,
+      depthTest: true,
+    }),
+  }));
 }
 
 function NebulaCloud({ config }: { config: NebulaConfig }) {
@@ -497,29 +572,86 @@ function Sun({ sunTexture }: { sunTexture: THREE.Texture }) {
   );
 }
 
-function SaturnTexturedRing({
-  planetRadius,
-  ringTexture,
-}: {
-  planetRadius: number;
-  ringTexture: THREE.Texture;
-}) {
-  const innerR = planetRadius * SATURN_RING_INNER;
-  const outerR = planetRadius * SATURN_RING_OUTER;
-  const geometry = useMemo(
-    () => createSaturnRingGeometry(innerR, outerR),
-    [innerR, outerR],
+function SaturnRing({ planetRadius }: { planetRadius: number }) {
+  const bands = useMemo(
+    () => createSaturnRingBands(planetRadius),
+    [planetRadius],
   );
 
+  useEffect(() => {
+    return () => {
+      bands.forEach((band) => {
+        band.geometry.dispose();
+        band.material.dispose();
+      });
+    };
+  }, [bands]);
+
   return (
-    <mesh rotation={[Math.PI / 2, 0, 0]} geometry={geometry}>
-      <meshBasicMaterial
-        map={ringTexture}
-        transparent
-        opacity={0.7}
-        side={THREE.DoubleSide}
-        depthWrite={false}
-        toneMapped={false}
+    <group rotation={[-Math.PI / 2, 0, 0]}>
+      {bands.map((band, index) => (
+        <mesh
+          key={`saturn-ring-band-${index}`}
+          name={index === 0 ? "saturn-ring" : undefined}
+          geometry={band.geometry}
+          material={band.material}
+          frustumCulled={false}
+        />
+      ))}
+    </group>
+  );
+}
+
+function SaturnMesh({
+  radius,
+  bodyMap,
+}: {
+  radius: number;
+  bodyMap: THREE.Texture;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+    console.log(
+      "[Saturn] group children count:",
+      groupRef.current.children.length,
+    );
+  }, []);
+
+  return (
+    <group ref={groupRef} rotation={[SATURN_GROUP_TILT, 0, 0]}>
+      <mesh name="saturn-body">
+        <sphereGeometry args={[radius, 36, 36]} />
+        <meshStandardMaterial
+          map={bodyMap}
+          color="#ffffff"
+          emissive="#000000"
+          emissiveIntensity={0}
+          roughness={0.88}
+          metalness={0.02}
+        />
+      </mesh>
+      <SaturnRing planetRadius={radius} />
+    </group>
+  );
+}
+
+function UranusMesh({ radius }: { radius: number }) {
+  const bodyMap = useMemo(() => createUranusBodyTexture(), []);
+
+  if (!bodyMap) return null;
+
+  return (
+    <mesh name="uranus-body">
+      <sphereGeometry args={[radius, 36, 36]} />
+      <meshStandardMaterial
+        map={bodyMap}
+        color="#cdd8d8"
+        emissive="#091f1f"
+        emissiveIntensity={0.2}
+        roughness={0.65}
+        metalness={0.05}
       />
     </mesh>
   );
@@ -534,29 +666,30 @@ function PlanetMesh({
 }) {
   const map = textures[config.texture];
 
-  const planetSphere = (
+  if (config.texture === "saturn") {
+    return (
+      <SaturnMesh radius={config.radius} bodyMap={textures.saturn} />
+    );
+  }
+
+  if (config.texture === "uranus") {
+    return (
+      <UranusMesh radius={config.radius} />
+    );
+  }
+
+  return (
     <mesh>
       <sphereGeometry args={[config.radius, 36, 36]} />
       <meshStandardMaterial
         map={map}
+        color="#ffffff"
         emissive="#000000"
         emissiveIntensity={0}
         roughness={0.88}
         metalness={0.02}
       />
     </mesh>
-  );
-
-  if (!config.hasRing) return planetSphere;
-
-  return (
-    <group rotation={[SATURN_GROUP_TILT, 0, 0]}>
-      {planetSphere}
-      <SaturnTexturedRing
-        planetRadius={config.radius}
-        ringTexture={textures.saturnRing}
-      />
-    </group>
   );
 }
 
@@ -575,29 +708,17 @@ function Planet({
 
     orbitAngle.current += config.orbitSpeed * delta;
     const x = config.orbitA * Math.cos(orbitAngle.current);
-    const z = config.orbitB * Math.sin(orbitAngle.current);
-    groupRef.current.position.set(x, 0, z);
+    const zFlat = config.orbitB * Math.sin(orbitAngle.current);
+    const y = config.yOffset + zFlat * Math.sin(config.inclination);
+    const z = zFlat * Math.cos(config.inclination);
+    groupRef.current.position.set(x, y, z);
     groupRef.current.rotation.y += config.spinSpeed * delta;
   });
 
-  const body = (
+  return (
     <group ref={groupRef}>
       <PlanetMesh config={config} textures={textures} />
     </group>
-  );
-
-  if (!config.trail) return body;
-
-  return (
-    <Trail
-      width={0.45}
-      length={14}
-      decay={0.94}
-      color="#d4a843"
-      attenuation={(width) => width * width}
-    >
-      {body}
-    </Trail>
   );
 }
 
@@ -619,14 +740,11 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
   return (
     <>
       <color attach="background" args={[BACKGROUND]} />
-      <ambientLight color="#6b3fa0" intensity={0.115} />
+      <ambientLight color="#6b3fa0" intensity={AMBIENT_INTENSITY} />
 
       <group ref={systemRef}>
         <CosmicBackdrop />
         <Sun sunTexture={textures.sun} />
-        {PLANETS.map((planet) => (
-          <OrbitPath key={`orbit-${planet.orbitA}`} a={planet.orbitA} b={planet.orbitB} />
-        ))}
         {PLANETS.map((planet, index) => (
           <Planet key={`planet-${index}`} config={planet} textures={textures} />
         ))}
