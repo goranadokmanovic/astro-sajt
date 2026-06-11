@@ -51,6 +51,7 @@ type PlanetConfig = {
   phase: number;
   yOffset: number;
   inclination: number;
+  stationRange: { start: number; end: number } | null;
 };
 
 const SUN_RADIUS = 1.6;
@@ -67,6 +68,7 @@ const PLANETS: PlanetConfig[] = [
     phase: 0 * 2.4,
     yOffset: -0.5,
     inclination: 0.02,
+    stationRange: { start: 0.375, end: 0.5 },
   },
   {
     radius: 0.42,
@@ -78,6 +80,7 @@ const PLANETS: PlanetConfig[] = [
     phase: 1 * 2.4,
     yOffset: 0.4,
     inclination: -0.04,
+    stationRange: { start: 0.5, end: 0.625 },
   },
   {
     radius: 0.48,
@@ -89,6 +92,7 @@ const PLANETS: PlanetConfig[] = [
     phase: 2 * 2.4,
     yOffset: -0.6,
     inclination: 0.05,
+    stationRange: { start: 0.25, end: 0.375 }, // Earth is Moon's parent — freezes at Moon station
   },
   {
     radius: 0.4,
@@ -100,6 +104,7 @@ const PLANETS: PlanetConfig[] = [
     phase: 3 * 2.4,
     yOffset: 0.5,
     inclination: -0.03,
+    stationRange: { start: 0.625, end: 0.75 },
   },
   {
     radius: 1.1,
@@ -111,6 +116,7 @@ const PLANETS: PlanetConfig[] = [
     phase: 4 * 2.4,
     yOffset: -1.2,
     inclination: -0.07,
+    stationRange: null,
   },
   {
     radius: 0.85,
@@ -122,6 +128,7 @@ const PLANETS: PlanetConfig[] = [
     phase: 5 * 2.4,
     yOffset: 1.2,
     inclination: 0.07,
+    stationRange: { start: 0.75, end: 0.875 },
   },
   {
     radius: 0.51,
@@ -133,6 +140,7 @@ const PLANETS: PlanetConfig[] = [
     phase: 6 * 2.4,
     yOffset: -0.6,
     inclination: 0.04,
+    stationRange: null,
   },
   {
     radius: 0.62,
@@ -144,6 +152,7 @@ const PLANETS: PlanetConfig[] = [
     phase: 7 * 2.4,
     yOffset: 0.9,
     inclination: -0.06,
+    stationRange: null,
   },
 ];
 
@@ -210,6 +219,21 @@ function getMoonSpeedFactor(p: number): number {
   if (p < 0.12) return 1 - ((p - 0.05) / 0.07) * 0.95; // ramp to 5 %
   if (p > 0.91) return 0.05 + ((p - 0.91) / 0.09) * 0.95;
   return 0.05;
+}
+
+// During a station hold, the target body (and its parent) ease to a full stop.
+// Returns a [0, 1] multiplier — 0 = frozen, 1 = free.
+const STATION_FREEZE_FADE = 0.02; // ease band in scroll units
+
+function getStationFreeze(stationStart: number, stationEnd: number, p: number): number {
+  if (p >= stationStart - STATION_FREEZE_FADE && p < stationStart) {
+    return 1 - (p - (stationStart - STATION_FREEZE_FADE)) / STATION_FREEZE_FADE;
+  }
+  if (p >= stationStart && p <= stationEnd) return 0;
+  if (p > stationEnd && p <= stationEnd + STATION_FREEZE_FADE) {
+    return (p - stationEnd) / STATION_FREEZE_FADE;
+  }
+  return 1;
 }
 
 // Textures whose world positions are tracked for the camera journey.
@@ -687,8 +711,10 @@ function Moon({ moonTexture }: { moonTexture: THREE.Texture }) {
 
   useFrame((_, delta) => {
     if (!meshRef.current) return;
-    const speedFactor = getMoonSpeedFactor(scrollState.progress);
-    moonAngle.current += MOON_ORBIT_SPEED * delta * speedFactor;
+    const p = scrollState.progress;
+    const base   = getMoonSpeedFactor(p);
+    const freeze = getStationFreeze(0.25, 0.375, p);
+    moonAngle.current += MOON_ORBIT_SPEED * delta * base * freeze;
 
     const earth = planetPositions.earth;
     const x = earth.x + MOON_ORBIT_RADIUS * Math.cos(moonAngle.current);
@@ -830,8 +856,12 @@ function Planet({ config, textures }: { config: PlanetConfig; textures: LoadedTe
   useFrame((_, delta) => {
     if (!groupRef.current) return;
 
-    const speedFactor = getOrbitalSpeedFactor(scrollState.progress);
-    orbitAngle.current += config.orbitSpeed * delta * speedFactor;
+    const p = scrollState.progress;
+    const base  = getOrbitalSpeedFactor(p);
+    const freeze = config.stationRange
+      ? getStationFreeze(config.stationRange.start, config.stationRange.end, p)
+      : 1;
+    orbitAngle.current += config.orbitSpeed * delta * base * freeze;
     const x = config.orbitA * Math.cos(orbitAngle.current);
     const zFlat = config.orbitB * Math.sin(orbitAngle.current);
     const y = config.yOffset + zFlat * Math.sin(config.inclination);
