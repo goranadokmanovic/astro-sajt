@@ -626,6 +626,111 @@ function SunGlowSprite({
   );
 }
 
+// ─── Sun embers ───────────────────────────────────────────────────────────────
+// Particles live in a thin burning shell just above the sun's surface.
+// Everything is computed once from index arithmetic — no Math.random.
+const EMBER_COUNT = 100;
+const EMBER_MIN_R = SUN_RADIUS * 1.02;
+const EMBER_MAX_R = SUN_RADIUS * 1.25;
+
+const _EMBER = (() => {
+  const GOLDEN_ANGLE = Math.PI * (Math.sqrt(5) - 1); // ≈ 2.3999...
+  const positions = new Float32Array(EMBER_COUNT * 3);
+  const colors    = new Float32Array(EMBER_COUNT * 3);
+  const phases    = new Float32Array(EMBER_COUNT);
+  const radii     = new Float32Array(EMBER_COUNT);
+  const c1 = new THREE.Color("#ffb347");
+  const c2 = new THREE.Color("#ff6b35");
+  const tc = new THREE.Color();
+
+  for (let i = 0; i < EMBER_COUNT; i++) {
+    // Fibonacci sphere — even, gap-free coverage
+    const cosTheta = 1 - (2 * (i + 0.5)) / EMBER_COUNT;
+    const sinTheta = Math.sqrt(Math.max(0, 1 - cosTheta * cosTheta));
+    const phi      = GOLDEN_ANGLE * i;
+    const nx = sinTheta * Math.cos(phi);
+    const ny = cosTheta;
+    const nz = sinTheta * Math.sin(phi);
+
+    // Deterministic radial spread within the shell
+    const rt = ((i * 7 + 3) % 17) / 17;
+    const r  = EMBER_MIN_R + rt * (EMBER_MAX_R - EMBER_MIN_R);
+    positions[i * 3]     = nx * r;
+    positions[i * 3 + 1] = ny * r;
+    positions[i * 3 + 2] = nz * r;
+    radii[i] = r;
+
+    // Blend #ffb347 ↔ #ff6b35; vary brightness to simulate opacity spread
+    const ct    = ((i * 11 + 7) % 19) / 19;
+    const brite = 0.45 + ((i * 13 + 5) % 23) / 23 * 0.55;
+    tc.lerpColors(c1, c2, ct).multiplyScalar(brite);
+    colors[i * 3]     = tc.r;
+    colors[i * 3 + 1] = tc.g;
+    colors[i * 3 + 2] = tc.b;
+
+    // Drift phase spread across 0 → 2π so particles move asynchronously
+    phases[i] = ((i * 17 + 11) % 31) / 31 * Math.PI * 2;
+  }
+  return { positions, colors, phases, radii };
+})();
+
+function SunEmbers() {
+  const pointsRef = useRef<THREE.Points>(null);
+  // Mutable working copy — same Float32Array that the BufferAttribute wraps
+  const livePos = useMemo(() => _EMBER.positions.slice(), []);
+
+  useEffect(() => {
+    // Hint WebGL that this buffer updates every frame
+    const attr = pointsRef.current?.geometry.getAttribute(
+      "position",
+    ) as THREE.BufferAttribute | undefined;
+    if (attr) attr.usage = THREE.DynamicDrawUsage;
+  }, []);
+
+  useFrame(({ clock }) => {
+    const pts = pointsRef.current;
+    if (!pts) return;
+    const t   = clock.elapsedTime;
+    const pos = _EMBER.positions;
+    const rad = _EMBER.radii;
+    const pha = _EMBER.phases;
+
+    for (let i = 0; i < EMBER_COUNT; i++) {
+      const i3    = i * 3;
+      // Slow radial oscillation — each ember drifts independently
+      const drift = Math.sin(t * 0.09 + pha[i]) * 0.055;
+      const s     = 1 + drift / rad[i];
+      livePos[i3]     = pos[i3]     * s;
+      livePos[i3 + 1] = pos[i3 + 1] * s;
+      livePos[i3 + 2] = pos[i3 + 2] * s;
+    }
+    // livePos IS attr.array — writing above already mutated the GPU buffer
+    const attr = pts.geometry.getAttribute(
+      "position",
+    ) as THREE.BufferAttribute;
+    attr.needsUpdate = true;
+  });
+
+  return (
+    <points ref={pointsRef}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[livePos, 3]} />
+        <bufferAttribute attach="attributes-color"    args={[_EMBER.colors, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        vertexColors
+        size={0.08}
+        sizeAttenuation
+        transparent
+        opacity={0.9}
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+        toneMapped={false}
+      />
+    </points>
+  );
+}
+
 function Sun({ sunTexture }: { sunTexture: THREE.Texture }) {
   const sunRef = useRef<THREE.Group>(null);
   const glowTexture = useMemo(() => createSunGlowTexture(), []);
@@ -659,8 +764,7 @@ function Sun({ sunTexture }: { sunTexture: THREE.Texture }) {
       <SunGlowSprite texture={glowTexture} scale={SUN_RADIUS * 3.4} opacity={0.1} />
       <SunGlowSprite texture={glowTexture} scale={SUN_RADIUS * 4.2} opacity={0.045} />
 
-      <Sparkles count={65} scale={7} size={2.2} speed={0.15} color="#ffd878" opacity={0.5} />
-      <Sparkles count={30} scale={9} size={1.4} speed={0.08} color="#ffdf8a" opacity={0.3} />
+      <SunEmbers />
 
       <pointLight color="#ffd090" intensity={22} decay={2} distance={0} />
       <pointLight color="#f0d8b8" intensity={5} decay={0} distance={0} />
