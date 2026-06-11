@@ -51,11 +51,11 @@ type PlanetConfig = {
   phase: number;
   yOffset: number;
   inclination: number;
-  stationRange: { start: number; end: number } | null;
 };
 
 const SUN_RADIUS = 1.6;
-const ORBIT_SEMI_MAJOR = [3.2, 4.6, 6.0, 7.4, 9.2, 11.4, 13.4, 15.2] as const;
+// Outer 3 orbits scaled in by ~12-15% so full orbits stay inside the wide-view frustum.
+const ORBIT_SEMI_MAJOR = [3.2, 4.6, 6.0, 7.4, 8.0, 10.0, 13.4, 13.0] as const;
 
 const PLANETS: PlanetConfig[] = [
   {
@@ -68,7 +68,6 @@ const PLANETS: PlanetConfig[] = [
     phase: 0 * 2.4,
     yOffset: -0.5,
     inclination: 0.02,
-    stationRange: { start: 0.375, end: 0.5 },
   },
   {
     radius: 0.42,
@@ -80,7 +79,6 @@ const PLANETS: PlanetConfig[] = [
     phase: 1 * 2.4,
     yOffset: 0.4,
     inclination: -0.04,
-    stationRange: { start: 0.5, end: 0.625 },
   },
   {
     radius: 0.48,
@@ -92,7 +90,6 @@ const PLANETS: PlanetConfig[] = [
     phase: 2 * 2.4,
     yOffset: -0.6,
     inclination: 0.05,
-    stationRange: { start: 0.25, end: 0.375 }, // Earth is Moon's parent — freezes at Moon station
   },
   {
     radius: 0.4,
@@ -104,7 +101,6 @@ const PLANETS: PlanetConfig[] = [
     phase: 3 * 2.4,
     yOffset: 0.5,
     inclination: -0.03,
-    stationRange: { start: 0.625, end: 0.75 },
   },
   {
     radius: 1.1,
@@ -116,7 +112,6 @@ const PLANETS: PlanetConfig[] = [
     phase: 4 * 2.4,
     yOffset: -1.2,
     inclination: -0.07,
-    stationRange: null,
   },
   {
     radius: 0.85,
@@ -128,19 +123,17 @@ const PLANETS: PlanetConfig[] = [
     phase: 5 * 2.4,
     yOffset: 1.2,
     inclination: 0.07,
-    stationRange: { start: 0.75, end: 0.875 },
   },
   {
     radius: 0.51,
     texture: "uranus",
-    orbitA: 14.8,
-    orbitB: 14.8 * 0.8,
+    orbitA: 12.5,
+    orbitB: 12.5 * 0.8,
     orbitSpeed: 0.12,
     spinSpeed: 0.8,
     phase: 6 * 2.4,
     yOffset: -0.6,
     inclination: 0.04,
-    stationRange: null,
   },
   {
     radius: 0.62,
@@ -152,12 +145,11 @@ const PLANETS: PlanetConfig[] = [
     phase: 7 * 2.4,
     yOffset: 0.9,
     inclination: -0.06,
-    stationRange: null,
   },
 ];
 
 // ─── Moon ────────────────────────────────────────────────────────────────────
-const MOON_RADIUS = 0.48 * 0.27; // ~0.13 — ~27 % of Earth radius
+const MOON_RADIUS = 0.48 * 0.20; // ~0.096 — ~20 % of Earth radius (clear companion, not twin)
 const MOON_ORBIT_RADIUS = 1.1; // ~2.3× Earth's scene radius (0.48) — Earth visible in frame
 const MOON_ORBIT_SPEED = 1.8;
 
@@ -174,7 +166,7 @@ const MERCURY_CAM_OFF = new THREE.Vector3(-1.6,  0.32, 2.25);
 const VENUS_CAM_OFF   = new THREE.Vector3( 1.75, 0.42, 2.65);
 const MARS_CAM_OFF    = new THREE.Vector3(-1.75, 0.56, 2.9 );
 const SATURN_CAM_OFF  = new THREE.Vector3( 2.5,  1.4,  5.1 );
-const PULLBACK_POS    = new THREE.Vector3( 0,    8.0,  36.0);
+const PULLBACK_POS    = new THREE.Vector3( 0,    4.0,  22.0); // matches opening — journey is a circle
 
 function computeDesiredCamera(p: number) {
   const pp = planetPositions;
@@ -262,6 +254,17 @@ const FILL_STATION_RANGES = [
   { start: 0.75,  end: 0.875, maxI: 3.0 }, // Saturn
 ] as const;
 const FILL_LIGHT_FADE = 0.022; // scroll units over which intensity ramps up/down
+
+// When ANY station is active, ALL orbital motion eases to zero — the whole cosmos holds its
+// breath while the camera observes one body. Self-rotation continues; only orbits stop.
+function getGlobalStationFreeze(p: number): number {
+  let minFreeze = 1;
+  for (const { start, end } of FILL_STATION_RANGES) {
+    const f = getStationFreeze(start, end, p);
+    if (f < minFreeze) minFreeze = f;
+  }
+  return minFreeze;
+}
 
 // Pre-allocated for fill-light position lerp — no GC per frame.
 const _keyLightPos = new THREE.Vector3();
@@ -800,7 +803,7 @@ function Moon({ moonTexture }: { moonTexture: THREE.Texture }) {
     if (!meshRef.current) return;
     const p = scrollState.progress;
     const base   = getMoonSpeedFactor(p);
-    const freeze = getStationFreeze(0.25, 0.375, p);
+    const freeze = getGlobalStationFreeze(p);
     moonAngle.current += MOON_ORBIT_SPEED * delta * base * freeze;
 
     const earth = planetPositions.earth;
@@ -951,9 +954,7 @@ function Planet({ config, textures }: { config: PlanetConfig; textures: LoadedTe
 
     const p = scrollState.progress;
     const base  = getOrbitalSpeedFactor(p);
-    const freeze = config.stationRange
-      ? getStationFreeze(config.stationRange.start, config.stationRange.end, p)
-      : 1;
+    const freeze = getGlobalStationFreeze(p);
     orbitAngle.current += config.orbitSpeed * delta * base * freeze;
     const x = config.orbitA * Math.cos(orbitAngle.current);
     const zFlat = config.orbitB * Math.sin(orbitAngle.current);
