@@ -1,0 +1,4 @@
+Planet textures from Solar System Scope (https://www.solarsystemscope.com/textures/)
+Licensed under CC Attribution 4.0 International (https://creativecommons.org/licenses/by/4.0/)
+
+Mirrored from Qt 3D planets-qml example (same Solar System Scope source assets).
