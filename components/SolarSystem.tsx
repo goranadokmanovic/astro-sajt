@@ -149,7 +149,7 @@ const PLANETS: PlanetConfig[] = [
 
 // ─── Moon ────────────────────────────────────────────────────────────────────
 const MOON_RADIUS = 0.48 * 0.27; // ~0.13 — ~27 % of Earth radius
-const MOON_ORBIT_RADIUS = 1.4;
+const MOON_ORBIT_RADIUS = 1.1; // ~2.3× Earth's scene radius (0.48) — Earth visible in frame
 const MOON_ORBIT_SPEED = 1.8;
 
 // ─── Camera journey ───────────────────────────────────────────────────────────
@@ -202,6 +202,14 @@ function getOrbitalSpeedFactor(p: number): number {
   if (p < 0.12) return 1 - ((p - 0.05) / 0.07) * 0.85;
   if (p > 0.91) return 0.15 + ((p - 0.91) / 0.09) * 0.85;
   return 0.15;
+}
+
+// Moon needs a much steeper slowdown — a moving Moon makes the camera station shimmer.
+function getMoonSpeedFactor(p: number): number {
+  if (p < 0.05) return 1;
+  if (p < 0.12) return 1 - ((p - 0.05) / 0.07) * 0.95; // ramp to 5 %
+  if (p > 0.91) return 0.05 + ((p - 0.91) / 0.09) * 0.95;
+  return 0.05;
 }
 
 // Textures whose world positions are tracked for the camera journey.
@@ -679,7 +687,7 @@ function Moon({ moonTexture }: { moonTexture: THREE.Texture }) {
 
   useFrame((_, delta) => {
     if (!meshRef.current) return;
-    const speedFactor = getOrbitalSpeedFactor(scrollState.progress);
+    const speedFactor = getMoonSpeedFactor(scrollState.progress);
     moonAngle.current += MOON_ORBIT_SPEED * delta * speedFactor;
 
     const earth = planetPositions.earth;
@@ -688,7 +696,7 @@ function Moon({ moonTexture }: { moonTexture: THREE.Texture }) {
     const y = earth.y;
 
     meshRef.current.position.set(x, y, z);
-    meshRef.current.rotation.y += 0.5 * delta;
+    meshRef.current.rotation.y += 0.15 * delta;
 
     // Store world position for camera journey
     meshRef.current.getWorldPosition(_planetWorldPos);
@@ -928,7 +936,7 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
 
       <EffectComposer multisampling={0}>
         <Bloom intensity={0.7} luminanceThreshold={0.85} mipmapBlur />
-        <Noise opacity={0.035} blendFunction={BlendFunction.OVERLAY} />
+        <Noise opacity={0.025} blendFunction={BlendFunction.OVERLAY} />
         <ChromaticAberration offset={CHROMA_OFFSET} />
         <Vignette darkness={0.45} offset={0.3} />
       </EffectComposer>
