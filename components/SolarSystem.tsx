@@ -5,6 +5,7 @@ import { Sparkles, Stars, useTexture } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { scrollState, planetPositions } from "@/lib/scrollState";
 
 const BACKGROUND = "#150a26";
 const BASE_TILT = (25 * Math.PI) / 180;
@@ -144,6 +145,72 @@ const PLANETS: PlanetConfig[] = [
   },
 ];
 
+// ─── Moon ────────────────────────────────────────────────────────────────────
+const MOON_RADIUS = 0.48 * 0.27; // ~0.13 — ~27 % of Earth radius
+const MOON_ORBIT_RADIUS = 1.4;
+const MOON_ORBIT_SPEED = 1.8;
+
+// ─── Camera journey ───────────────────────────────────────────────────────────
+// Pre-allocated vectors to avoid per-frame GC pressure.
+const _camDesiredPos = new THREE.Vector3();
+const _camDesiredLook = new THREE.Vector3();
+const _planetWorldPos = new THREE.Vector3();
+
+const SUN_CAM_OFF     = new THREE.Vector3( 3.5,  2.0,  6.0);
+const MOON_CAM_OFF    = new THREE.Vector3( 0.9,  0.4,  2.8);
+const MERCURY_CAM_OFF = new THREE.Vector3(-2.5,  0.5,  3.5);
+const VENUS_CAM_OFF   = new THREE.Vector3( 2.5,  0.6,  3.8);
+const MARS_CAM_OFF    = new THREE.Vector3(-2.5,  0.8,  4.2);
+const SATURN_CAM_OFF  = new THREE.Vector3( 3.2,  1.8,  6.5);
+const PULLBACK_POS    = new THREE.Vector3( 0,    8.0, 36.0);
+
+function computeDesiredCamera(p: number) {
+  const pp = planetPositions;
+  if (p < 0.125) {
+    _camDesiredPos.set(0, 4, 22);
+    _camDesiredLook.set(0, 0, 0);
+  } else if (p < 0.25) {
+    _camDesiredPos.set(pp.sun.x + SUN_CAM_OFF.x, pp.sun.y + SUN_CAM_OFF.y, pp.sun.z + SUN_CAM_OFF.z);
+    _camDesiredLook.set(pp.sun.x, pp.sun.y, pp.sun.z);
+  } else if (p < 0.375) {
+    _camDesiredPos.set(pp.moon.x + MOON_CAM_OFF.x, pp.moon.y + MOON_CAM_OFF.y, pp.moon.z + MOON_CAM_OFF.z);
+    _camDesiredLook.set(pp.moon.x, pp.moon.y, pp.moon.z);
+  } else if (p < 0.5) {
+    _camDesiredPos.set(pp.mercury.x + MERCURY_CAM_OFF.x, pp.mercury.y + MERCURY_CAM_OFF.y, pp.mercury.z + MERCURY_CAM_OFF.z);
+    _camDesiredLook.set(pp.mercury.x, pp.mercury.y, pp.mercury.z);
+  } else if (p < 0.625) {
+    _camDesiredPos.set(pp.venus.x + VENUS_CAM_OFF.x, pp.venus.y + VENUS_CAM_OFF.y, pp.venus.z + VENUS_CAM_OFF.z);
+    _camDesiredLook.set(pp.venus.x, pp.venus.y, pp.venus.z);
+  } else if (p < 0.75) {
+    _camDesiredPos.set(pp.mars.x + MARS_CAM_OFF.x, pp.mars.y + MARS_CAM_OFF.y, pp.mars.z + MARS_CAM_OFF.z);
+    _camDesiredLook.set(pp.mars.x, pp.mars.y, pp.mars.z);
+  } else if (p < 0.875) {
+    _camDesiredPos.set(pp.saturn.x + SATURN_CAM_OFF.x, pp.saturn.y + SATURN_CAM_OFF.y, pp.saturn.z + SATURN_CAM_OFF.z);
+    _camDesiredLook.set(pp.saturn.x, pp.saturn.y, pp.saturn.z);
+  } else {
+    _camDesiredPos.copy(PULLBACK_POS);
+    _camDesiredLook.set(0, 0, 0);
+  }
+}
+
+// Planets slow to 15 % speed during the journey so the camera can frame them.
+function getOrbitalSpeedFactor(p: number): number {
+  if (p < 0.05) return 1;
+  if (p < 0.12) return 1 - ((p - 0.05) / 0.07) * 0.85;
+  if (p > 0.91) return 0.15 + ((p - 0.91) / 0.09) * 0.85;
+  return 0.15;
+}
+
+// Textures whose world positions are tracked for the camera journey.
+const TEXTURE_TO_POS: Partial<Record<TextureKey, keyof typeof planetPositions>> = {
+  mercury: "mercury",
+  venus:   "venus",
+  earth:   "earth",
+  mars:    "mars",
+  saturn:  "saturn",
+};
+
+// ─── Ring / Saturn constants ──────────────────────────────────────────────────
 const SATURN_GROUP_TILT = 0.45;
 
 const PROCEDURAL_RING_BANDS = [
@@ -224,6 +291,7 @@ const NEBULAE: NebulaConfig[] = [
   },
 ];
 
+// ─── Texture helpers ──────────────────────────────────────────────────────────
 function configureTexture(texture: THREE.Texture) {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
@@ -256,6 +324,7 @@ function usePlanetTextures(): LoadedTextures {
   return textures;
 }
 
+// ─── Canvas texture generators ────────────────────────────────────────────────
 function createNebulaTexture(inner: string, mid: string, outer: string) {
   const size = 512;
   const canvas = document.createElement("canvas");
@@ -265,12 +334,8 @@ function createNebulaTexture(inner: string, mid: string, outer: string) {
   if (!ctx) return null;
 
   const gradient = ctx.createRadialGradient(
-    size / 2,
-    size / 2,
-    0,
-    size / 2,
-    size / 2,
-    size / 2,
+    size / 2, size / 2, 0,
+    size / 2, size / 2, size / 2,
   );
   gradient.addColorStop(0, inner);
   gradient.addColorStop(0.35, mid);
@@ -294,9 +359,9 @@ function createUranusBodyTexture() {
   if (!ctx) return null;
 
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, "#1a3535");
-  gradient.addColorStop(0.5, "#2a5f5f");
-  gradient.addColorStop(1, "#1a3535");
+  gradient.addColorStop(0, "#0f2035");
+  gradient.addColorStop(0.5, "#2d5a7a");
+  gradient.addColorStop(1, "#0f2035");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 
@@ -312,6 +377,56 @@ function createUranusBodyTexture() {
   return texture;
 }
 
+function createMoonTexture() {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  // Base gray gradient — lighter at equator, darker at poles
+  const grad = ctx.createLinearGradient(0, 0, 0, size);
+  grad.addColorStop(0, "#6e6860");
+  grad.addColorStop(0.5, "#a8a090");
+  grad.addColorStop(1, "#6e6860");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Deterministic crater marks (no Math.random)
+  const CRATERS = [
+    { cx: 0.28, cy: 0.38, r: 0.09, d: 0.65 },
+    { cx: 0.72, cy: 0.22, r: 0.07, d: 0.55 },
+    { cx: 0.50, cy: 0.68, r: 0.11, d: 0.70 },
+    { cx: 0.18, cy: 0.74, r: 0.05, d: 0.50 },
+    { cx: 0.82, cy: 0.58, r: 0.08, d: 0.60 },
+    { cx: 0.44, cy: 0.32, r: 0.06, d: 0.45 },
+    { cx: 0.63, cy: 0.52, r: 0.085, d: 0.62 },
+    { cx: 0.35, cy: 0.80, r: 0.04, d: 0.40 },
+  ] as const;
+
+  for (const { cx, cy, r, d } of CRATERS) {
+    const x = cx * size;
+    const y = cy * size;
+    const rad = r * size;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    g.addColorStop(0,   `rgba(48, 44, 40, ${d})`);
+    g.addColorStop(0.5, `rgba(70, 65, 60, ${d * 0.35})`);
+    g.addColorStop(1,   "rgba(155, 148, 140, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, rad, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function createSunGlowTexture() {
   const size = 256;
   const canvas = document.createElement("canvas");
@@ -321,12 +436,8 @@ function createSunGlowTexture() {
   if (!ctx) return null;
 
   const gradient = ctx.createRadialGradient(
-    size / 2,
-    size / 2,
-    0,
-    size / 2,
-    size / 2,
-    size / 2,
+    size / 2, size / 2, 0,
+    size / 2, size / 2, size / 2,
   );
   gradient.addColorStop(0, "rgba(255, 223, 138, 0.9)");
   gradient.addColorStop(0.28, "rgba(255, 176, 64, 0.45)");
@@ -379,6 +490,7 @@ function createSaturnRingBands(planetRadius: number) {
   }));
 }
 
+// ─── 3D Components ────────────────────────────────────────────────────────────
 function NebulaCloud({ config }: { config: NebulaConfig }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const basePosition = useMemo(
@@ -533,42 +645,58 @@ function Sun({ sunTexture }: { sunTexture: THREE.Texture }) {
         />
       </mesh>
 
-      <SunGlowSprite
-        texture={glowTexture}
-        scale={SUN_RADIUS * 2.6}
-        opacity={0.22}
-      />
-      <SunGlowSprite
-        texture={glowTexture}
-        scale={SUN_RADIUS * 3.4}
-        opacity={0.1}
-      />
-      <SunGlowSprite
-        texture={glowTexture}
-        scale={SUN_RADIUS * 4.2}
-        opacity={0.045}
-      />
+      <SunGlowSprite texture={glowTexture} scale={SUN_RADIUS * 2.6} opacity={0.22} />
+      <SunGlowSprite texture={glowTexture} scale={SUN_RADIUS * 3.4} opacity={0.1} />
+      <SunGlowSprite texture={glowTexture} scale={SUN_RADIUS * 4.2} opacity={0.045} />
 
-      <Sparkles
-        count={65}
-        scale={7}
-        size={2.2}
-        speed={0.15}
-        color="#ffd878"
-        opacity={0.5}
-      />
-      <Sparkles
-        count={30}
-        scale={9}
-        size={1.4}
-        speed={0.08}
-        color="#ffdf8a"
-        opacity={0.3}
-      />
+      <Sparkles count={65} scale={7} size={2.2} speed={0.15} color="#ffd878" opacity={0.5} />
+      <Sparkles count={30} scale={9} size={1.4} speed={0.08} color="#ffdf8a" opacity={0.3} />
 
       <pointLight color="#ffd090" intensity={22} decay={2} distance={0} />
       <pointLight color="#f0d8b8" intensity={5} decay={0} distance={0} />
     </group>
+  );
+}
+
+function Moon() {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const moonAngle = useRef(1.2);
+  const moonMap = useMemo(() => createMoonTexture(), []);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current) return;
+    const speedFactor = getOrbitalSpeedFactor(scrollState.progress);
+    moonAngle.current += MOON_ORBIT_SPEED * delta * speedFactor;
+
+    const earth = planetPositions.earth;
+    const x = earth.x + MOON_ORBIT_RADIUS * Math.cos(moonAngle.current);
+    const z = earth.z + MOON_ORBIT_RADIUS * Math.sin(moonAngle.current);
+    const y = earth.y;
+
+    meshRef.current.position.set(x, y, z);
+    meshRef.current.rotation.y += 0.5 * delta;
+
+    // Store world position for camera journey
+    meshRef.current.getWorldPosition(_planetWorldPos);
+    planetPositions.moon.x = _planetWorldPos.x;
+    planetPositions.moon.y = _planetWorldPos.y;
+    planetPositions.moon.z = _planetWorldPos.z;
+  });
+
+  if (!moonMap) return null;
+
+  return (
+    <mesh ref={meshRef}>
+      <sphereGeometry args={[MOON_RADIUS, 24, 24]} />
+      <meshStandardMaterial
+        map={moonMap}
+        color="#ccc4b8"
+        roughness={0.92}
+        metalness={0}
+        emissive="#000000"
+        emissiveIntensity={0}
+      />
+    </mesh>
   );
 }
 
@@ -602,21 +730,12 @@ function SaturnRing({ planetRadius }: { planetRadius: number }) {
   );
 }
 
-function SaturnMesh({
-  radius,
-  bodyMap,
-}: {
-  radius: number;
-  bodyMap: THREE.Texture;
-}) {
+function SaturnMesh({ radius, bodyMap }: { radius: number; bodyMap: THREE.Texture }) {
   const groupRef = useRef<THREE.Group>(null);
 
   useEffect(() => {
     if (!groupRef.current) return;
-    console.log(
-      "[Saturn] group children count:",
-      groupRef.current.children.length,
-    );
+    console.log("[Saturn] group children count:", groupRef.current.children.length);
   }, []);
 
   return (
@@ -647,8 +766,8 @@ function UranusMesh({ radius }: { radius: number }) {
       <sphereGeometry args={[radius, 36, 36]} />
       <meshStandardMaterial
         map={bodyMap}
-        color="#cdd8d8"
-        emissive="#091f1f"
+        color="#a8bdd0"
+        emissive="#08141f"
         emissiveIntensity={0.2}
         roughness={0.65}
         metalness={0.05}
@@ -657,25 +776,15 @@ function UranusMesh({ radius }: { radius: number }) {
   );
 }
 
-function PlanetMesh({
-  config,
-  textures,
-}: {
-  config: PlanetConfig;
-  textures: LoadedTextures;
-}) {
+function PlanetMesh({ config, textures }: { config: PlanetConfig; textures: LoadedTextures }) {
   const map = textures[config.texture];
 
   if (config.texture === "saturn") {
-    return (
-      <SaturnMesh radius={config.radius} bodyMap={textures.saturn} />
-    );
+    return <SaturnMesh radius={config.radius} bodyMap={textures.saturn} />;
   }
 
   if (config.texture === "uranus") {
-    return (
-      <UranusMesh radius={config.radius} />
-    );
+    return <UranusMesh radius={config.radius} />;
   }
 
   return (
@@ -693,26 +802,30 @@ function PlanetMesh({
   );
 }
 
-function Planet({
-  config,
-  textures,
-}: {
-  config: PlanetConfig;
-  textures: LoadedTextures;
-}) {
+function Planet({ config, textures }: { config: PlanetConfig; textures: LoadedTextures }) {
   const groupRef = useRef<THREE.Group>(null);
   const orbitAngle = useRef(config.phase);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
 
-    orbitAngle.current += config.orbitSpeed * delta;
+    const speedFactor = getOrbitalSpeedFactor(scrollState.progress);
+    orbitAngle.current += config.orbitSpeed * delta * speedFactor;
     const x = config.orbitA * Math.cos(orbitAngle.current);
     const zFlat = config.orbitB * Math.sin(orbitAngle.current);
     const y = config.yOffset + zFlat * Math.sin(config.inclination);
     const z = zFlat * Math.cos(config.inclination);
     groupRef.current.position.set(x, y, z);
     groupRef.current.rotation.y += config.spinSpeed * delta;
+
+    // Track world positions for camera journey stops
+    const posName = TEXTURE_TO_POS[config.texture];
+    if (posName) {
+      groupRef.current.getWorldPosition(_planetWorldPos);
+      planetPositions[posName].x = _planetWorldPos.x;
+      planetPositions[posName].y = _planetWorldPos.y;
+      planetPositions[posName].z = _planetWorldPos.z;
+    }
   });
 
   return (
@@ -725,16 +838,45 @@ function Planet({
 function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
   const systemRef = useRef<THREE.Group>(null);
   const textures = usePlanetTextures();
+  const camPos  = useRef(new THREE.Vector3(0, 4, 22));
+  const camLook = useRef(new THREE.Vector3(0, 0, 0));
 
-  useFrame(() => {
+  useFrame((state, delta) => {
+    const progress = scrollState.progress;
     const tilt = tiltRefs.current;
-    if (!tilt || !systemRef.current) return;
 
-    tilt.currentX += (tilt.targetX - tilt.currentX) * DAMPING;
-    tilt.currentZ += (tilt.targetZ - tilt.currentZ) * DAMPING;
+    // System tilt / parallax — only while at rest (progress near 0)
+    if (systemRef.current) {
+      if (progress < 0.05 && tilt) {
+        tilt.currentX += (tilt.targetX - tilt.currentX) * DAMPING;
+        tilt.currentZ += (tilt.targetZ - tilt.currentZ) * DAMPING;
+        systemRef.current.rotation.x = BASE_TILT + tilt.currentX;
+        systemRef.current.rotation.z = tilt.currentZ;
+      } else {
+        // Smoothly reset to BASE_TILT once journey begins
+        systemRef.current.rotation.x = THREE.MathUtils.damp(
+          systemRef.current.rotation.x, BASE_TILT, 4, delta,
+        );
+        systemRef.current.rotation.z = THREE.MathUtils.damp(
+          systemRef.current.rotation.z, 0, 4, delta,
+        );
+      }
+    }
 
-    systemRef.current.rotation.x = BASE_TILT + tilt.currentX;
-    systemRef.current.rotation.z = tilt.currentZ;
+    // Camera journey — drives camera position for scroll > 1 %
+    if (progress > 0.01) {
+      computeDesiredCamera(progress);
+      const lambda = 1.5;
+      camPos.current.x  = THREE.MathUtils.damp(camPos.current.x,  _camDesiredPos.x,  lambda, delta);
+      camPos.current.y  = THREE.MathUtils.damp(camPos.current.y,  _camDesiredPos.y,  lambda, delta);
+      camPos.current.z  = THREE.MathUtils.damp(camPos.current.z,  _camDesiredPos.z,  lambda, delta);
+      camLook.current.x = THREE.MathUtils.damp(camLook.current.x, _camDesiredLook.x, lambda, delta);
+      camLook.current.y = THREE.MathUtils.damp(camLook.current.y, _camDesiredLook.y, lambda, delta);
+      camLook.current.z = THREE.MathUtils.damp(camLook.current.z, _camDesiredLook.z, lambda, delta);
+
+      state.camera.position.copy(camPos.current);
+      state.camera.lookAt(camLook.current);
+    }
   });
 
   return (
@@ -745,17 +887,14 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
       <group ref={systemRef}>
         <CosmicBackdrop />
         <Sun sunTexture={textures.sun} />
+        <Moon />
         {PLANETS.map((planet, index) => (
           <Planet key={`planet-${index}`} config={planet} textures={textures} />
         ))}
       </group>
 
       <EffectComposer multisampling={0}>
-        <Bloom
-          intensity={0.7}
-          luminanceThreshold={0.85}
-          mipmapBlur
-        />
+        <Bloom intensity={0.7} luminanceThreshold={0.85} mipmapBlur />
         <Vignette darkness={0.45} offset={0.3} />
       </EffectComposer>
     </>
@@ -774,7 +913,7 @@ export default function SolarSystem() {
 
   useEffect(() => {
     const hoverQuery = window.matchMedia("(hover: hover)");
-    const fineQuery = window.matchMedia("(pointer: fine)");
+    const fineQuery  = window.matchMedia("(pointer: fine)");
 
     const update = () => {
       tiltRefs.current.enabled = hoverQuery.matches && fineQuery.matches;
@@ -796,11 +935,9 @@ export default function SolarSystem() {
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!tiltRefs.current.enabled || !containerRef.current) return;
-
     const rect = containerRef.current.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width - 0.5;
     const y = (event.clientY - rect.top) / rect.height - 0.5;
-
     tiltRefs.current.targetZ = x * PARALLAX_GAIN;
     tiltRefs.current.targetX = -y * PARALLAX_GAIN;
   };

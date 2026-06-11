@@ -19,8 +19,9 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "Astro — Natalne karte",
-  description: "Mistična astrologija — uskoro.",
+  title: "Dragana Dokmanović — Natalne karte",
+  description:
+    "Astrološke konsultacije, natalna karta i energetska mapa vašeg života.",
 };
 
 export default function RootLayout({
