@@ -17,6 +17,7 @@ const PULSE_OMEGA = (Math.PI * 2) / 4;
 
 const TEXTURE_PATHS = {
   sun: "/textures/planets/sun.jpg",
+  moon: "/textures/planets/moon.jpg",
   mercury: "/textures/planets/mercury.jpg",
   venus: "/textures/planets/venus_surface.jpg",
   earth: "/textures/planets/earth_daymap.jpg",
@@ -212,7 +213,7 @@ const TEXTURE_TO_POS: Partial<Record<TextureKey, keyof typeof planetPositions>> 
 };
 
 // Module-level constants (no per-render allocation).
-const CHROMA_OFFSET = new THREE.Vector2(0.0006, 0.0006);
+const CHROMA_OFFSET = new THREE.Vector2(0.0003, 0.0003);
 const CLOSEUP_SEG_TEXTURES = new Set<TextureKey>(["mercury", "venus", "earth", "mars"]);
 
 // ─── Ring / Saturn constants ──────────────────────────────────────────────────
@@ -227,6 +228,7 @@ const PROCEDURAL_RING_BANDS = [
 ] as const;
 
 const PLANET_TEXTURE_KEYS = [
+  "moon",
   "mercury",
   "venus",
   "earth",
@@ -387,55 +389,6 @@ function createUranusBodyTexture() {
   return texture;
 }
 
-function createMoonTexture() {
-  const size = 256;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-
-  // Base gray gradient — lighter at equator, darker at poles
-  const grad = ctx.createLinearGradient(0, 0, 0, size);
-  grad.addColorStop(0, "#6e6860");
-  grad.addColorStop(0.5, "#a8a090");
-  grad.addColorStop(1, "#6e6860");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-
-  // Deterministic crater marks (no Math.random)
-  const CRATERS = [
-    { cx: 0.28, cy: 0.38, r: 0.09, d: 0.65 },
-    { cx: 0.72, cy: 0.22, r: 0.07, d: 0.55 },
-    { cx: 0.50, cy: 0.68, r: 0.11, d: 0.70 },
-    { cx: 0.18, cy: 0.74, r: 0.05, d: 0.50 },
-    { cx: 0.82, cy: 0.58, r: 0.08, d: 0.60 },
-    { cx: 0.44, cy: 0.32, r: 0.06, d: 0.45 },
-    { cx: 0.63, cy: 0.52, r: 0.085, d: 0.62 },
-    { cx: 0.35, cy: 0.80, r: 0.04, d: 0.40 },
-  ] as const;
-
-  for (const { cx, cy, r, d } of CRATERS) {
-    const x = cx * size;
-    const y = cy * size;
-    const rad = r * size;
-    const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
-    g.addColorStop(0,   `rgba(48, 44, 40, ${d})`);
-    g.addColorStop(0.5, `rgba(70, 65, 60, ${d * 0.35})`);
-    g.addColorStop(1,   "rgba(155, 148, 140, 0)");
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(x, y, rad, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.generateMipmaps = true;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.needsUpdate = true;
-  return tex;
-}
 
 function createSunGlowTexture() {
   const size = 256;
@@ -707,10 +660,9 @@ function Sun({ sunTexture }: { sunTexture: THREE.Texture }) {
   );
 }
 
-function Moon() {
+function Moon({ moonTexture }: { moonTexture: THREE.Texture }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const moonAngle = useRef(1.2);
-  const moonMap = useMemo(() => createMoonTexture(), []);
 
   useFrame((_, delta) => {
     if (!meshRef.current) return;
@@ -732,15 +684,13 @@ function Moon() {
     planetPositions.moon.z = _planetWorldPos.z;
   });
 
-  if (!moonMap) return null;
-
   return (
     <mesh ref={meshRef}>
       <sphereGeometry args={[MOON_RADIUS, 96, 96]} />
       <meshStandardMaterial
-        map={moonMap}
-        color="#ccc4b8"
-        roughness={0.92}
+        map={moonTexture}
+        color="#ffffff"
+        roughness={0.9}
         metalness={0}
         emissive="#000000"
         emissiveIntensity={0}
@@ -937,7 +887,7 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
       <group ref={systemRef}>
         <CosmicBackdrop />
         <Sun sunTexture={textures.sun} />
-        <Moon />
+        <Moon moonTexture={textures.moon} />
         {PLANETS.map((planet, index) => (
           <Planet key={`planet-${index}`} config={planet} textures={textures} />
         ))}
