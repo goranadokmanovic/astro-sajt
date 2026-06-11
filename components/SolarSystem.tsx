@@ -264,13 +264,8 @@ const FILL_LIGHT_MAX_I = 3.0;   // gentle fill — sun point lights are 22+5 at 
 // ─── Ring / Saturn constants ──────────────────────────────────────────────────
 const SATURN_GROUP_TILT = 0.45;
 
-const PROCEDURAL_RING_BANDS = [
-  { inner: 1.4, outer: 1.55, color: "#d9c49a", opacity: 0.5 },
-  { inner: 1.58, outer: 1.78, color: "#cdb285", opacity: 0.4 },
-  { inner: 1.82, outer: 2.0, color: "#d4bc92", opacity: 0.45 },
-  { inner: 2.03, outer: 2.15, color: "#c4ad7e", opacity: 0.3 },
-  { inner: 2.18, outer: 2.26, color: "#bfa878", opacity: 0.18 },
-] as const;
+const RING_INNER_FACTOR = 1.4;  // × planet radius
+const RING_OUTER_FACTOR = 2.3;  // × planet radius
 
 const PLANET_TEXTURE_KEYS = [
   "moon",
@@ -481,21 +476,104 @@ function createSaturnRingGeometry(innerR: number, outerR: number) {
   return geo;
 }
 
-function createSaturnRingBands(planetRadius: number) {
-  return PROCEDURAL_RING_BANDS.map((band) => ({
-    geometry: createSaturnRingGeometry(
-      planetRadius * band.inner,
-      planetRadius * band.outer,
-    ),
-    material: new THREE.MeshBasicMaterial({
-      color: band.color,
-      transparent: true,
-      opacity: band.opacity,
-      side: THREE.DoubleSide,
-      depthWrite: true,
-      depthTest: true,
-    }),
-  }));
+// Deterministic PRNG (Mulberry32) — no Math.random(), identical result every mount.
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return function () {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// 1024×4 canvas — fine ringlets with real Saturn macro structure.
+// u=0 inner edge, u=1 outer edge; v is unused (always 0.5 from UV remap).
+function createSaturnRingTexture(): THREE.CanvasTexture {
+  const W = 1024;
+  const H = 4;
+  const canvas = document.createElement("canvas");
+  canvas.width  = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
+  const rng = mulberry32(0xbee5cafe); // fixed seed
+
+  // Sandy-gold palette
+  const COLORS: [number, number, number][] = [
+    [232, 217, 176], // #e8d9b0
+    [212, 188, 146], // #d4bc92
+    [196, 173, 126], // #c4ad7e
+    [184, 153, 104], // #b89968
+  ];
+
+  // Macro zone envelope — based on real ring proportions.
+  // C ring 0–0.28, B ring 0.28–0.69, Cassini 0.69–0.77, A ring 0.77–1.0
+  function zoneAlpha(u: number): number {
+    if (u < 0.28) return 0.38 + (u / 0.28) * 0.12;            // 0.38 → 0.50
+    if (u < 0.69) {
+      const t = (u - 0.28) / 0.41;
+      return 0.55 + Math.sin(t * Math.PI) * 0.25;              // peaks 0.80 mid-B
+    }
+    if (u < 0.77) return 0.03;                                  // Cassini gap
+    if (u < 0.87) return 0.22 + ((u - 0.77) / 0.10) * 0.26;   // 0.22 → 0.48
+    if (u < 0.95) return 0.48 - ((u - 0.87) / 0.08) * 0.10;   // slight drop
+    return Math.max(0, 0.38 * (1 - (u - 0.95) / 0.05));        // outer fade
+  }
+
+  // Soft edge fade at inner/outer rim
+  function edgeFade(u: number): number {
+    return Math.min(1, u / 0.03) * Math.min(1, (1 - u) / 0.025);
+  }
+
+  const pixAlpha = new Float32Array(W);
+  const pixR     = new Uint8Array(W);
+  const pixG     = new Uint8Array(W);
+  const pixB     = new Uint8Array(W);
+
+  // Lay down fine ringlet strips
+  let x = 0;
+  while (x < W) {
+    const u = x / (W - 1);
+    const inBring = u >= 0.28 && u < 0.69;
+    const stripW  = inBring
+      ? 2 + Math.round(rng() * 6)  // 2–8 px — finest detail in B ring
+      : 2 + Math.round(rng() * 10); // 2–12 px elsewhere
+    const ci        = Math.floor(rng() * COLORS.length);
+    const stripBase = 0.15 + rng() * 0.70; // 0.15–0.85
+
+    for (let i = 0; i < stripW && x + i < W; i++) {
+      const px = x + i;
+      const pu = px / (W - 1);
+      pixAlpha[px] = Math.min(0.92, Math.max(0, stripBase * zoneAlpha(pu) * edgeFade(pu) * 1.4));
+      pixR[px]     = COLORS[ci][0];
+      pixG[px]     = COLORS[ci][1];
+      pixB[px]     = COLORS[ci][2];
+    }
+    x += stripW;
+  }
+
+  // Write pixels (same data for every row — texture is 1D)
+  const imgData = ctx.createImageData(W, H);
+  const d = imgData.data;
+  for (let px = 0; px < W; px++) {
+    for (let py = 0; py < H; py++) {
+      const idx  = (py * W + px) * 4;
+      d[idx]     = pixR[px];
+      d[idx + 1] = pixG[px];
+      d[idx + 2] = pixB[px];
+      d[idx + 3] = Math.round(pixAlpha[px] * 255);
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace      = THREE.SRGBColorSpace;
+  tex.wrapS           = THREE.ClampToEdgeWrapping;
+  tex.wrapT           = THREE.ClampToEdgeWrapping;
+  tex.generateMipmaps = true;
+  tex.minFilter       = THREE.LinearMipmapLinearFilter;
+  tex.needsUpdate     = true;
+  return tex;
 }
 
 // ─── 3D Components ────────────────────────────────────────────────────────────
@@ -747,32 +825,38 @@ function Moon({ moonTexture }: { moonTexture: THREE.Texture }) {
 }
 
 function SaturnRing({ planetRadius }: { planetRadius: number }) {
-  const bands = useMemo(
-    () => createSaturnRingBands(planetRadius),
-    [planetRadius],
-  );
+  const { geometry, material } = useMemo(() => {
+    const inner = planetRadius * RING_INNER_FACTOR;
+    const outer = planetRadius * RING_OUTER_FACTOR;
+    const geo   = createSaturnRingGeometry(inner, outer);
+    const tex   = createSaturnRingTexture();
+    const mat   = new THREE.MeshBasicMaterial({
+      map:         tex,
+      transparent: true,
+      side:        THREE.DoubleSide,
+      depthWrite:  true,
+      depthTest:   true,
+      alphaTest:   0.02,
+    });
+    return { geometry: geo, material: mat };
+  }, [planetRadius]);
 
   useEffect(() => {
     return () => {
-      bands.forEach((band) => {
-        band.geometry.dispose();
-        band.material.dispose();
-      });
+      geometry.dispose();
+      (material as THREE.MeshBasicMaterial).map?.dispose();
+      material.dispose();
     };
-  }, [bands]);
+  }, [geometry, material]);
 
   return (
-    <group rotation={[-Math.PI / 2, 0, 0]}>
-      {bands.map((band, index) => (
-        <mesh
-          key={`saturn-ring-band-${index}`}
-          name={index === 0 ? "saturn-ring" : undefined}
-          geometry={band.geometry}
-          material={band.material}
-          frustumCulled={false}
-        />
-      ))}
-    </group>
+    <mesh
+      name="saturn-ring"
+      geometry={geometry}
+      material={material}
+      rotation={[-Math.PI / 2, 0, 0]}
+      frustumCulled={false}
+    />
   );
 }
 
