@@ -158,13 +158,14 @@ const _camDesiredPos = new THREE.Vector3();
 const _camDesiredLook = new THREE.Vector3();
 const _planetWorldPos = new THREE.Vector3();
 
-const SUN_CAM_OFF     = new THREE.Vector3( 3.5,  2.0,  6.0);
-const MOON_CAM_OFF    = new THREE.Vector3( 0.9,  0.4,  2.8);
-const MERCURY_CAM_OFF = new THREE.Vector3(-2.5,  0.5,  3.5);
-const VENUS_CAM_OFF   = new THREE.Vector3( 2.5,  0.6,  3.8);
-const MARS_CAM_OFF    = new THREE.Vector3(-2.5,  0.8,  4.2);
-const SATURN_CAM_OFF  = new THREE.Vector3( 3.2,  1.8,  6.5);
-const PULLBACK_POS    = new THREE.Vector3( 0,    8.0, 36.0);
+// Camera offsets: small bodies (Moon, Mercury) ×0.65; mid ×0.70; Saturn ×0.78 (ring clearance).
+const SUN_CAM_OFF     = new THREE.Vector3( 2.45, 1.4,  4.2 );
+const MOON_CAM_OFF    = new THREE.Vector3( 0.58, 0.26, 1.8 );
+const MERCURY_CAM_OFF = new THREE.Vector3(-1.6,  0.32, 2.25);
+const VENUS_CAM_OFF   = new THREE.Vector3( 1.75, 0.42, 2.65);
+const MARS_CAM_OFF    = new THREE.Vector3(-1.75, 0.56, 2.9 );
+const SATURN_CAM_OFF  = new THREE.Vector3( 2.5,  1.4,  5.1 );
+const PULLBACK_POS    = new THREE.Vector3( 0,    8.0,  36.0);
 
 function computeDesiredCamera(p: number) {
   const pp = planetPositions;
@@ -215,6 +216,18 @@ const TEXTURE_TO_POS: Partial<Record<TextureKey, keyof typeof planetPositions>> 
 // Module-level constants (no per-render allocation).
 const CHROMA_OFFSET = new THREE.Vector2(0.0003, 0.0003);
 const CLOSEUP_SEG_TEXTURES = new Set<TextureKey>(["mercury", "venus", "earth", "mars"]);
+
+// Station fill-light: one reusable PointLight that follows the camera at each scroll stop.
+const FILL_STATION_RANGES = [
+  { start: 0.125, end: 0.25  }, // Sun
+  { start: 0.25,  end: 0.375 }, // Moon
+  { start: 0.375, end: 0.5   }, // Mercury
+  { start: 0.5,   end: 0.625 }, // Venus
+  { start: 0.625, end: 0.75  }, // Mars
+  { start: 0.75,  end: 0.875 }, // Saturn
+] as const;
+const FILL_LIGHT_FADE  = 0.022; // scroll units over which intensity ramps up/down
+const FILL_LIGHT_MAX_I = 3.0;   // gentle fill — sun point lights are 22+5 at origin
 
 // ─── Ring / Saturn constants ──────────────────────────────────────────────────
 const SATURN_GROUP_TILT = 0.45;
@@ -836,10 +849,11 @@ function Planet({ config, textures }: { config: PlanetConfig; textures: LoadedTe
 }
 
 function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
-  const systemRef = useRef<THREE.Group>(null);
-  const textures = usePlanetTextures();
-  const camPos  = useRef(new THREE.Vector3(0, 4, 22));
-  const camLook = useRef(new THREE.Vector3(0, 0, 0));
+  const systemRef   = useRef<THREE.Group>(null);
+  const textures    = usePlanetTextures();
+  const camPos      = useRef(new THREE.Vector3(0, 4, 22));
+  const camLook     = useRef(new THREE.Vector3(0, 0, 0));
+  const keyLightRef = useRef<THREE.PointLight>(null);
 
   useFrame((state, delta) => {
     const progress = scrollState.progress;
@@ -853,7 +867,6 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
         systemRef.current.rotation.x = BASE_TILT + tilt.currentX;
         systemRef.current.rotation.z = tilt.currentZ;
       } else {
-        // Smoothly reset to BASE_TILT once journey begins
         systemRef.current.rotation.x = THREE.MathUtils.damp(
           systemRef.current.rotation.x, BASE_TILT, 4, delta,
         );
@@ -877,12 +890,32 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
       state.camera.position.copy(camPos.current);
       state.camera.lookAt(camLook.current);
     }
+
+    // Station fill light — follows camera, fades in/out per station
+    if (keyLightRef.current) {
+      let targetI = 0;
+      for (const { start, end } of FILL_STATION_RANGES) {
+        if (progress >= start && progress < end) {
+          const fadeIn  = Math.min((progress - start) / FILL_LIGHT_FADE, 1);
+          const fadeOut = Math.min((end - progress)   / FILL_LIGHT_FADE, 1);
+          targetI = Math.min(fadeIn, fadeOut) * FILL_LIGHT_MAX_I;
+          break;
+        }
+      }
+      // Position near camera — illuminates the hemisphere facing the camera
+      keyLightRef.current.position.copy(camPos.current);
+      keyLightRef.current.intensity = THREE.MathUtils.damp(
+        keyLightRef.current.intensity, targetI, 4, delta,
+      );
+    }
   });
 
   return (
     <>
       <color attach="background" args={[BACKGROUND]} />
       <ambientLight color="#6b3fa0" intensity={AMBIENT_INTENSITY} />
+      {/* Station fill — soft warm key that reveals texture on the shadow side */}
+      <pointLight ref={keyLightRef} color="#fff2dd" intensity={0} distance={14} decay={2} />
 
       <group ref={systemRef}>
         <CosmicBackdrop />

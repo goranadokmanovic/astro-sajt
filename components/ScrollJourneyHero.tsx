@@ -79,7 +79,7 @@ function PlanetCard({
   const isLeft = stop.side === "left";
   return (
     <motion.div
-      className={`absolute top-1/2 -translate-y-1/2 max-w-xs pointer-events-none px-8 md:px-12 ${
+      className={`absolute top-1/2 -translate-y-1/2 max-w-sm pointer-events-none px-8 md:px-14 ${
         isLeft ? "left-0" : "right-0"
       }`}
       animate={{
@@ -88,13 +88,27 @@ function PlanetCard({
       }}
       transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
     >
-      <p className="font-mono text-[11px] tracking-[0.24em] text-accent uppercase mb-3">
+      {/* Warm ambient glow — mirrors the station fill light on the text side */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -inset-10 -z-10"
+        style={{
+          background:
+            "radial-gradient(ellipse at 50% 50%, rgba(212,168,67,0.06) 0%, transparent 68%)",
+          filter: "blur(40px)",
+          transform: "scale(1.3)",
+        }}
+      />
+
+      <p className="font-mono text-[11px] tracking-[0.24em] text-accent uppercase mb-4">
         {stop.id} · {stop.name}
       </p>
-      <h2 className="font-serif italic text-3xl text-text leading-snug mb-4">
+      <h2 className="font-serif italic text-5xl md:text-6xl text-text leading-tight mb-5">
         {stop.eyebrow}
       </h2>
-      <p className="text-sm text-text-muted leading-relaxed">{stop.body}</p>
+      <p className="text-sm md:text-base text-text-muted leading-[1.75]">
+        {stop.body}
+      </p>
     </motion.div>
   );
 }
