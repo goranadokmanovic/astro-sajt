@@ -8,7 +8,7 @@ import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { scrollState, planetPositions } from "@/lib/scrollState";
 
-const BACKGROUND = "#150a26";
+const BACKGROUND = "#0a0612";
 const BASE_TILT = (25 * Math.PI) / 180;
 const MAX_PARALLAX = 0.05;
 const PARALLAX_GAIN = MAX_PARALLAX * 2;
@@ -298,46 +298,50 @@ type NebulaConfig = {
 
 const NEBULAE: NebulaConfig[] = [
   {
+    // Upper-left — slightly denser patch, largest wipe
     position: [-18, 6, -22],
-    scale: 48,
+    scale: 82,
     rotation: 0.4,
-    inner: "#8b4fc0",
-    mid: "#6b3fa0",
-    outer: "#41215f",
-    opacity: 0.18,
+    inner: "#3a1a5c",
+    mid: "#200f3a",
+    outer: "#0d0620",
+    opacity: 0.07,
     driftPhase: 0,
     driftSpeed: 0.12,
   },
   {
+    // Right side — barely perceptible wisp
     position: [22, -4, -18],
-    scale: 42,
+    scale: 70,
     rotation: -0.6,
-    inner: "#6b3fa0",
-    mid: "#41215f",
-    outer: "#2a1040",
-    opacity: 0.14,
+    inner: "#2a1448",
+    mid: "#160a2c",
+    outer: "#090412",
+    opacity: 0.05,
     driftPhase: 1.8,
     driftSpeed: 0.09,
   },
   {
+    // Upper centre-right, furthest back — widest thin wash, second denser zone
     position: [8, 12, -30],
-    scale: 55,
+    scale: 96,
     rotation: 0.2,
-    inner: "#9b5fd0",
-    mid: "#8b4fc0",
-    outer: "#6b3fa0",
-    opacity: 0.12,
+    inner: "#3d1f5c",
+    mid: "#221040",
+    outer: "#0f0624",
+    opacity: 0.08,
     driftPhase: 3.2,
     driftSpeed: 0.07,
   },
   {
+    // Lower-left — ghost layer, near-invisible
     position: [-10, -8, -26],
-    scale: 38,
+    scale: 62,
     rotation: 1.1,
-    inner: "#7b48b8",
-    mid: "#5a2f88",
-    outer: "#41215f",
-    opacity: 0.16,
+    inner: "#2a1448",
+    mid: "#170b30",
+    outer: "#0a0518",
+    opacity: 0.04,
     driftPhase: 4.5,
     driftSpeed: 0.1,
   },
