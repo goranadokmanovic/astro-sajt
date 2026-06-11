@@ -1,8 +1,9 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Sparkles, Stars, useTexture } from "@react-three/drei";
-import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
+import { Bloom, ChromaticAberration, EffectComposer, Noise, Vignette } from "@react-three/postprocessing";
+import { BlendFunction } from "postprocessing";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { scrollState, planetPositions } from "@/lib/scrollState";
@@ -210,6 +211,10 @@ const TEXTURE_TO_POS: Partial<Record<TextureKey, keyof typeof planetPositions>> 
   saturn:  "saturn",
 };
 
+// Module-level constants (no per-render allocation).
+const CHROMA_OFFSET = new THREE.Vector2(0.0006, 0.0006);
+const CLOSEUP_SEG_TEXTURES = new Set<TextureKey>(["mercury", "venus", "earth", "mars"]);
+
 // ─── Ring / Saturn constants ──────────────────────────────────────────────────
 const SATURN_GROUP_TILT = 0.45;
 
@@ -292,9 +297,12 @@ const NEBULAE: NebulaConfig[] = [
 ];
 
 // ─── Texture helpers ──────────────────────────────────────────────────────────
-function configureTexture(texture: THREE.Texture) {
+function configureTexture(texture: THREE.Texture, maxAnisotropy: number) {
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
+  texture.anisotropy = maxAnisotropy;
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.needsUpdate = true;
 }
 
 function isTextureLoaded(texture: THREE.Texture | undefined) {
@@ -315,11 +323,13 @@ function logTextureAudit(textures: LoadedTextures) {
 
 function usePlanetTextures(): LoadedTextures {
   const textures = useTexture(TEXTURE_PATHS);
+  const { gl } = useThree();
 
   useEffect(() => {
-    Object.values(textures).forEach(configureTexture);
+    const maxAniso = gl.capabilities.getMaxAnisotropy();
+    Object.values(textures).forEach((tex) => configureTexture(tex, maxAniso));
     logTextureAudit(textures);
-  }, [textures]);
+  }, [textures, gl]);
 
   return textures;
 }
@@ -421,8 +431,8 @@ function createMoonTexture() {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.generateMipmaps = false;
-  tex.minFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.needsUpdate = true;
   return tex;
 }
@@ -453,7 +463,7 @@ function createSunGlowTexture() {
 }
 
 function createSaturnRingGeometry(innerR: number, outerR: number) {
-  const geo = new THREE.RingGeometry(innerR, outerR, 128);
+  const geo = new THREE.RingGeometry(innerR, outerR, 256);
   const pos = geo.attributes.position;
   const uv = geo.attributes.uv;
 
@@ -632,7 +642,7 @@ function Sun({ sunTexture }: { sunTexture: THREE.Texture }) {
   return (
     <group ref={sunRef}>
       <mesh>
-        <sphereGeometry args={[SUN_RADIUS, 48, 48]} />
+        <sphereGeometry args={[SUN_RADIUS, 96, 96]} />
         <meshStandardMaterial
           map={sunTexture}
           emissiveMap={sunTexture}
@@ -687,7 +697,7 @@ function Moon() {
 
   return (
     <mesh ref={meshRef}>
-      <sphereGeometry args={[MOON_RADIUS, 24, 24]} />
+      <sphereGeometry args={[MOON_RADIUS, 96, 96]} />
       <meshStandardMaterial
         map={moonMap}
         color="#ccc4b8"
@@ -741,7 +751,7 @@ function SaturnMesh({ radius, bodyMap }: { radius: number; bodyMap: THREE.Textur
   return (
     <group ref={groupRef} rotation={[SATURN_GROUP_TILT, 0, 0]}>
       <mesh name="saturn-body">
-        <sphereGeometry args={[radius, 36, 36]} />
+        <sphereGeometry args={[radius, 96, 96]} />
         <meshStandardMaterial
           map={bodyMap}
           color="#ffffff"
@@ -787,9 +797,10 @@ function PlanetMesh({ config, textures }: { config: PlanetConfig; textures: Load
     return <UranusMesh radius={config.radius} />;
   }
 
+  const segs = CLOSEUP_SEG_TEXTURES.has(config.texture) ? 96 : 36;
   return (
     <mesh>
-      <sphereGeometry args={[config.radius, 36, 36]} />
+      <sphereGeometry args={[config.radius, segs, segs]} />
       <meshStandardMaterial
         map={map}
         color="#ffffff"
@@ -895,6 +906,8 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
 
       <EffectComposer multisampling={0}>
         <Bloom intensity={0.7} luminanceThreshold={0.85} mipmapBlur />
+        <Noise opacity={0.035} blendFunction={BlendFunction.OVERLAY} />
+        <ChromaticAberration offset={CHROMA_OFFSET} />
         <Vignette darkness={0.45} offset={0.3} />
       </EffectComposer>
     </>
