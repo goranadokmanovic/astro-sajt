@@ -206,18 +206,20 @@ function computeDesiredCamera(p: number) {
 }
 
 // Planets slow to 15 % speed during the journey so the camera can frame them.
+// Exit ramp begins when the camera pulls back (p=0.875) — full speed returns at p=1.0
+// so the final wide view is identical in motion to the opening shot.
 function getOrbitalSpeedFactor(p: number): number {
-  if (p < 0.05) return 1;
-  if (p < 0.12) return 1 - ((p - 0.05) / 0.07) * 0.85;
-  if (p > 0.91) return 0.15 + ((p - 0.91) / 0.09) * 0.85;
+  if (p < 0.05)   return 1;
+  if (p < 0.12)   return 1 - ((p - 0.05)  / 0.07)  * 0.85;
+  if (p > 0.875)  return 0.15 + ((p - 0.875) / 0.125) * 0.85;
   return 0.15;
 }
 
 // Moon needs a much steeper slowdown — a moving Moon makes the camera station shimmer.
 function getMoonSpeedFactor(p: number): number {
-  if (p < 0.05) return 1;
-  if (p < 0.12) return 1 - ((p - 0.05) / 0.07) * 0.95; // ramp to 5 %
-  if (p > 0.91) return 0.05 + ((p - 0.91) / 0.09) * 0.95;
+  if (p < 0.05)   return 1;
+  if (p < 0.12)   return 1 - ((p - 0.05)  / 0.07)  * 0.95;
+  if (p > 0.875)  return 0.05 + ((p - 0.875) / 0.125) * 0.95;
   return 0.05;
 }
 
@@ -250,16 +252,19 @@ const CHROMA_OFFSET = new THREE.Vector2(0.0003, 0.0003);
 const CLOSEUP_SEG_TEXTURES = new Set<TextureKey>(["mercury", "venus", "earth", "mars"]);
 
 // Station fill-light: one reusable PointLight that follows the camera at each scroll stop.
+// maxI is per-station — Mercury gets a 50 % boost because its surface is near-charcoal dark.
 const FILL_STATION_RANGES = [
-  { start: 0.125, end: 0.25  }, // Sun
-  { start: 0.25,  end: 0.375 }, // Moon
-  { start: 0.375, end: 0.5   }, // Mercury
-  { start: 0.5,   end: 0.625 }, // Venus
-  { start: 0.625, end: 0.75  }, // Mars
-  { start: 0.75,  end: 0.875 }, // Saturn
+  { start: 0.125, end: 0.25,  maxI: 3.0 }, // Sun
+  { start: 0.25,  end: 0.375, maxI: 3.0 }, // Moon
+  { start: 0.375, end: 0.5,   maxI: 4.5 }, // Mercury — dark albedo needs extra lift
+  { start: 0.5,   end: 0.625, maxI: 3.0 }, // Venus
+  { start: 0.625, end: 0.75,  maxI: 3.0 }, // Mars
+  { start: 0.75,  end: 0.875, maxI: 3.0 }, // Saturn
 ] as const;
-const FILL_LIGHT_FADE  = 0.022; // scroll units over which intensity ramps up/down
-const FILL_LIGHT_MAX_I = 3.0;   // gentle fill — sun point lights are 22+5 at origin
+const FILL_LIGHT_FADE = 0.022; // scroll units over which intensity ramps up/down
+
+// Pre-allocated for fill-light position lerp — no GC per frame.
+const _keyLightPos = new THREE.Vector3();
 
 // ─── Ring / Saturn constants ──────────────────────────────────────────────────
 const SATURN_GROUP_TILT = 0.45;
@@ -1013,19 +1018,22 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
       state.camera.lookAt(camLook.current);
     }
 
-    // Station fill light — follows camera, fades in/out per station
+    // Station fill light — fades in/out per station, position between camera and planet
     if (keyLightRef.current) {
       let targetI = 0;
-      for (const { start, end } of FILL_STATION_RANGES) {
+      for (const { start, end, maxI } of FILL_STATION_RANGES) {
         if (progress >= start && progress < end) {
           const fadeIn  = Math.min((progress - start) / FILL_LIGHT_FADE, 1);
           const fadeOut = Math.min((end - progress)   / FILL_LIGHT_FADE, 1);
-          targetI = Math.min(fadeIn, fadeOut) * FILL_LIGHT_MAX_I;
+          targetI = Math.min(fadeIn, fadeOut) * maxI;
           break;
         }
       }
-      // Position near camera — illuminates the hemisphere facing the camera
-      keyLightRef.current.position.copy(camPos.current);
+      // Place light 30 % of the way from camera toward the look-at point —
+      // this is slightly more on-axis than the camera itself, giving the
+      // camera-facing hemisphere maximum frontal illumination.
+      _keyLightPos.lerpVectors(camPos.current, camLook.current, 0.3);
+      keyLightRef.current.position.copy(_keyLightPos);
       keyLightRef.current.intensity = THREE.MathUtils.damp(
         keyLightRef.current.intensity, targetI, 4, delta,
       );
