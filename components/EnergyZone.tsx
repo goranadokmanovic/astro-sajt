@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { motion, useScroll, useTransform } from "framer-motion";
+import { motion } from "framer-motion";
 
 interface Particle {
   x: number; y: number;
@@ -13,15 +13,13 @@ interface Particle {
 
 function spawnParticle(W: number, H: number): Particle {
   const isRayDrift = Math.random() < 0.28;
-  // Ray-drift: top-right area, moves down-left
-  // Ambient: anywhere, moves up
   const x = isRayDrift ? W * (0.4 + Math.random() * 0.6) : Math.random() * W;
   const y = isRayDrift ? Math.random() * H * 0.5 : Math.random() * H;
   const PALETTE = [
-    [212, 168, 67],  // #d4a843 accent gold
-    [192, 128, 48],  // #c08030 amber
-    [232, 200, 122], // #e8c87a pale gold
-    [255, 245, 208], // #fff5d0 near-white gold
+    [212, 168, 67],
+    [192, 128, 48],
+    [232, 200, 122],
+    [255, 245, 208],
   ];
   const [r, g, b] = PALETTE[Math.floor(Math.random() * PALETTE.length)];
   return {
@@ -43,14 +41,13 @@ function drawRays(canvas: HTMLCanvasElement) {
   if (!ctx) return;
   ctx.clearRect(0, 0, W, H);
 
-  // Origin: top-right corner. Direction vectors in screen space (dx<0=left, dy>0=down).
   const RAYS = [
-    { dx: -0.97, dy: 0.24, opacity: 0.07, w: 5 },
-    { dx: -0.92, dy: 0.39, opacity: 0.10, w: 12 },
-    { dx: -0.85, dy: 0.53, opacity: 0.13, w: 20 },
-    { dx: -0.75, dy: 0.66, opacity: 0.09, w: 12 },
-    { dx: -0.62, dy: 0.78, opacity: 0.07, w: 7 },
-    { dx: -0.45, dy: 0.89, opacity: 0.05, w: 4 },
+    { dx: -0.97, dy: 0.24, opacity: 0.06, w: 5 },
+    { dx: -0.92, dy: 0.39, opacity: 0.09, w: 12 },
+    { dx: -0.85, dy: 0.53, opacity: 0.11, w: 20 },
+    { dx: -0.75, dy: 0.66, opacity: 0.08, w: 12 },
+    { dx: -0.62, dy: 0.78, opacity: 0.06, w: 7 },
+    { dx: -0.45, dy: 0.89, opacity: 0.04, w: 4 },
   ];
 
   const len = Math.hypot(W, H) * 1.5;
@@ -74,20 +71,12 @@ function drawRays(canvas: HTMLCanvasElement) {
 }
 
 export default function EnergyZone() {
-  const sectionRef     = useRef<HTMLElement>(null);
   const starsRef       = useRef<HTMLCanvasElement>(null);
   const particleRef    = useRef<HTMLCanvasElement>(null);
   const raysRef        = useRef<HTMLCanvasElement>(null);
   const particlesStore = useRef<Particle[]>([]);
 
-  // Scroll-driven entry reveal: background slides from opaque → transparent
-  const { scrollYProgress } = useScroll({
-    target: sectionRef,
-    offset: ["start end", "start 22%"],
-  });
-  const entryOpacity = useTransform(scrollYProgress, [0, 1], [1, 0]);
-
-  // Static star field — drawn once, matches 3D scene sky palette
+  // Static star field
   useEffect(() => {
     const canvas = starsRef.current;
     if (!canvas) return;
@@ -102,7 +91,7 @@ export default function EnergyZone() {
         const x = Math.random() * W;
         const y = Math.random() * H;
         const r = 0.4 + Math.random() * 1.2;
-        const a = 0.12 + Math.random() * 0.46;
+        const a = 0.10 + Math.random() * 0.42;
         const cr = Math.round(210 + Math.random() * 45);
         const cg = Math.round(210 + Math.random() * 40);
         const cb = Math.round(220 + Math.random() * 35);
@@ -118,7 +107,7 @@ export default function EnergyZone() {
     return () => ro.disconnect();
   }, []);
 
-  // Draw rays (static, redrawn on resize)
+  // Draw rays
   useEffect(() => {
     const canvas = raysRef.current;
     if (!canvas) return;
@@ -177,7 +166,7 @@ export default function EnergyZone() {
         const hex = Math.floor(a * 255).toString(16).padStart(2, "0");
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = `#${p.r.toString(16).padStart(2,"0")}${p.g.toString(16).padStart(2,"0")}${p.b.toString(16).padStart(2,"0")}${hex}`;
+        ctx.fillStyle = `#${p.r.toString(16).padStart(2,"00")}${p.g.toString(16).padStart(2,"00")}${p.b.toString(16).padStart(2,"00")}${hex}`;
         ctx.fill();
       }
       animId = requestAnimationFrame(tick);
@@ -196,11 +185,10 @@ export default function EnergyZone() {
     <>
       {/* ── Hero viewport ───────────────────────────────────────────────── */}
       <section
-        ref={sectionRef}
-        className="relative min-h-screen overflow-hidden"
+        className="relative min-h-screen"
         style={{ background: "#0a0612" }}
       >
-        {/* Star field — background stars, sky continues from 3D scene */}
+        {/* Star field */}
         <canvas
           ref={starsRef}
           aria-hidden
@@ -226,42 +214,38 @@ export default function EnergyZone() {
           style={{ width: "100%", height: "100%" }}
         />
 
-        {/* Sun glow — top-right, partially out of frame */}
+        {/* Sun glow — full-section, no hard rectangular edge */}
         <div
           aria-hidden
-          className="absolute top-0 right-0 pointer-events-none"
+          className="absolute inset-0 pointer-events-none"
           style={{
-            width: "52vw",
-            height: "52vh",
             background:
-              "radial-gradient(ellipse at 100% 0%, rgba(240,222,172,0.62) 0%, rgba(228,200,128,0.36) 10%, rgba(210,168,80,0.16) 26%, rgba(180,130,48,0.05) 50%, transparent 68%)",
+              "radial-gradient(ellipse 62% 58% at 100% 0%, rgba(238,218,168,0.50) 0%, rgba(220,190,115,0.28) 12%, rgba(200,158,72,0.10) 30%, transparent 52%)",
           }}
         />
-        {/* Sun pulse */}
+        {/* Sun pulse — full-section, no hard edge */}
         <motion.div
           aria-hidden
-          className="absolute top-0 right-0 pointer-events-none"
+          className="absolute inset-0 pointer-events-none"
           style={{
-            width: "38vw",
-            height: "38vh",
             background:
-              "radial-gradient(ellipse at 100% 0%, rgba(235,210,155,0.34) 0%, rgba(215,185,110,0.12) 18%, transparent 44%)",
+              "radial-gradient(ellipse 44% 40% at 100% 0%, rgba(232,208,148,0.30) 0%, rgba(210,180,100,0.09) 22%, transparent 44%)",
           }}
           animate={{ opacity: [0.55, 1, 0.55] }}
           transition={{ duration: 4.2, repeat: Infinity, ease: "easeInOut" }}
         />
 
-        {/* Rays — static canvas, slightly blurred for soft god-ray feel */}
+        {/* Rays — full-section canvas, no box edge */}
         <canvas
           ref={raysRef}
           aria-hidden
           className="absolute inset-0 pointer-events-none"
-          style={{ width: "100%", height: "100%", filter: "blur(3px)", opacity: 0.75 }}
+          style={{ width: "100%", height: "100%", filter: "blur(3px)", opacity: 0.70 }}
         />
 
         {/* Central content */}
         <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 text-center">
-          {/* Figure */}
+          {/* Figure with breathing animation — mask dissolves PNG edges before vignette takes over */}
           <motion.div
             animate={{ scale: [1, 1.022, 1] }}
             transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
@@ -295,11 +279,20 @@ export default function EnergyZone() {
           </div>
         </div>
 
-        {/* Entry overlay — dark background fades out as you scroll in */}
-        <motion.div
+        {/* Section-wide vignette — dissolves figure edges AND section top/bottom into #0a0612 */}
+        <div
           aria-hidden
-          className="absolute inset-0 pointer-events-none z-20 bg-background"
-          style={{ opacity: entryOpacity }}
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            zIndex: 15,
+            background: `
+              radial-gradient(ellipse 55% 60% at 50% 44%,
+                transparent 28%,
+                rgba(10,6,18,0.38) 52%,
+                rgba(10,6,18,0.78) 68%,
+                #0a0612 84%)
+            `,
+          }}
         />
       </section>
 

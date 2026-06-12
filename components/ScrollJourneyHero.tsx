@@ -248,8 +248,10 @@ export default function ScrollJourneyHero() {
 
   // Warm amber glow: peaks when camera is deep inside Lav (~exitT 0.6), short and soft
   const flashOpacity = useTransform(scrollYProgress, [0.985, 0.990, 0.994], [0, 0.85, 0]);
-  // Background fade starts after the flash dissipates
-  const fadeOpacity = useTransform(scrollYProgress, [0.993, 1.0], [0, 1]);
+  // Background fade: starts when exit fly begins, complete before EnergyZone boundary shows
+  const fadeOpacity  = useTransform(scrollYProgress, [0.975, 0.985], [0, 1]);
+  // Progress strip: fades out as the finale completes, gone before the section boundary
+  const progressOpacity = useTransform(scrollYProgress, [0.87, 0.93], [1, 0]);
 
   useMotionValueEvent(scrollYProgress, "change", (p) => {
     // Act 1 3D scene reads this — first 60% of 1000vh maps to 0–1 (same scroll rhythm as original 600vh)
@@ -292,23 +294,27 @@ export default function ScrollJourneyHero() {
           ))}
         </div>
 
-        {/* Warm amber glow during camera fly-through — feels like flying into starlight */}
+        {/* End-of-journey fade to background — z-20 covers the progress strip (z-10) */}
+        <motion.div
+          className="absolute inset-0 bg-background pointer-events-none"
+          style={{ opacity: fadeOpacity, zIndex: 20 }}
+        />
+
+        {/* Warm amber glow during camera fly-through — above the dark fade */}
         <motion.div
           className="absolute inset-0 pointer-events-none"
           style={{
             opacity: flashOpacity,
+            zIndex: 30,
             background: "radial-gradient(ellipse 90% 80% at 50% 42%, #f5d9a0 0%, #d4a843 38%, #c9962e 65%, transparent 88%)",
           }}
         />
 
-        {/* End-of-journey fade to background */}
+        {/* Progress strip — fades out before section boundary becomes visible */}
         <motion.div
-          className="absolute inset-0 bg-background pointer-events-none"
-          style={{ opacity: fadeOpacity }}
-        />
-
-        {/* Progress strip */}
-        <div className="absolute bottom-6 left-6 right-6 flex items-center gap-4 pointer-events-none z-10">
+          className="absolute bottom-6 left-6 right-6 flex items-center gap-4 pointer-events-none z-10"
+          style={{ opacity: progressOpacity }}
+        >
           <span className="font-mono text-[9px] tracking-[0.32em] text-accent/50 uppercase shrink-0">
             Putovanje
           </span>
@@ -318,7 +324,7 @@ export default function ScrollJourneyHero() {
               style={{ scaleX: scrollYProgress, transformOrigin: "left" }}
             />
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   );
