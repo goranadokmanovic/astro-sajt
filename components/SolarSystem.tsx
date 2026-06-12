@@ -1111,23 +1111,36 @@ function ZodiacConstellation({ ci }: { ci: number }) {
       targetScale = 4.5;
     }
 
-    // Anchor is 2× regular — sharp astrophoto hierarchy.
-    // Featured trio: anchor 80 px, normal 40 px. Non-featured: 50/25 px.
-    const targetAnchorPx = featured ? 80 : 50;
-    const targetNormalPx = featured ? 40 : 25;
+    // Finale halo tone-down: smaller sprites + lower glow multiplier so the soft halo
+    // disc retreats. Cores and spikes are unchanged (they dominate at any size).
+    // Halo energy at finale ≈ 54 % of active station ≈ roughly half as requested.
+    const isFinaleAll    = act2p >= ACT2_FINALE_START;
+    const isActiveTriple = featured && !isFinaleAll; // active trio at a station only
+    const finaleGlowMult = isFinaleAll ? 0.85 : 1.0;
+    const targetAnchorPx = isFinaleAll ? 68 : (isActiveTriple ? 80 : 50);
+    const targetNormalPx = isFinaleAll ? 34 : (isActiveTriple ? 40 : 25);
 
-    // Lines visible at 0.15 in finale so patterns read as shapes; 0.08 elsewhere.
-    const isFinalePhase = act2p >= ACT2_FINALE_START && act2p < ACT2_EXIT_START;
-    const lineTargetOpacity = base * (isFinalePhase ? 0.20 : 0.08);
+    // Line opacity: focus-only logic.
+    // Intro: all lines fade in with their constellation.
+    // Active trio at stations: lines on at subtle opacity.
+    // Finale: ghost lines only (0.06) so patterns hint without competing.
+    // All other states (inactive at stations, Act 1, exit): fully off.
+    const isIntroPhase  = act2p > 0 && act2p < ACT2_INTRO_END;
+    const isFinaleLines = isFinaleAll && act2p < ACT2_EXIT_START;
+    let lineTargetOpacity: number;
+    if      (isIntroPhase)   lineTargetOpacity = base * 0.10; // fades in with constellation
+    else if (isActiveTriple) lineTargetOpacity = 0.10;
+    else if (isFinaleLines)  lineTargetOpacity = 0.06;
+    else                     lineTargetOpacity = 0;
 
     if (anchorRef.current) {
       const mat = anchorRef.current.material as THREE.PointsMaterial;
-      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle, 5, delta);
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle * finaleGlowMult, 5, delta);
       mat.size    = THREE.MathUtils.damp(mat.size, targetAnchorPx, 4, delta);
     }
     if (normalRef.current) {
       const mat = normalRef.current.material as THREE.PointsMaterial;
-      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle * 0.85, 5, delta);
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle * 0.85 * finaleGlowMult, 5, delta);
       mat.size    = THREE.MathUtils.damp(mat.size, targetNormalPx, 4, delta);
     }
     if (linesRef.current) {
@@ -1140,8 +1153,8 @@ function ZodiacConstellation({ ci }: { ci: number }) {
       );
     }
 
-    // Labels only during active element stations and finale — not during intro beat
-    const labelTarget = (featured && base > 0.5) ? 1 : 0;
+    // Labels: intro, active stations, finale — not inactive constellations at stations.
+    const labelTarget = ((isIntroPhase || featured) && base > 0.4) ? 1 : 0;
     labelOpacity.current = THREE.MathUtils.damp(labelOpacity.current, labelTarget, 4, delta);
     if (labelEl.current) labelEl.current.style.opacity = String(labelOpacity.current);
   });
