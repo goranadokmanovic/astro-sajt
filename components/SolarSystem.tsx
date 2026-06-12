@@ -173,7 +173,7 @@ const PULLBACK_POS    = new THREE.Vector3( 0,    4.0,  22.0); // matches opening
 // 12 zodiac constellations encircle the solar system on the ecliptic ring.
 // One elevated three-quarter camera view for all stations and finale.
 
-const CHART_RING_R  = 30;  // outside Neptune (15.2) — zodiac ring radius
+const CHART_RING_R  = 35;  // outside Neptune (15.2) — zodiac ring radius
 const CHART_RING_Y  = 2;   // near ecliptic plane, slight elevation
 
 const CHART_CAM_POS  = new THREE.Vector3(0, 50, 60); // elevated three-quarter view
@@ -194,8 +194,8 @@ const ACT2_FINALE_END     = 0.9375;
 const ACT2_ELEMENTS       = ['VATRA', 'ZEMLJA', 'VAZDUH', 'VODA'] as const;
 const _ORIGIN             = new THREE.Vector3(0, 0, 0); // pre-allocated zero
 
-// Torus ring at chart level for finale glow
-const _chartRingGeo = new THREE.TorusGeometry(CHART_RING_R, 0.12, 8, 128);
+// Torus ring at chart level for finale — hairline, very subtle
+const _chartRingGeo = new THREE.TorusGeometry(CHART_RING_R, 0.035, 8, 128);
 
 function computeDesiredCamera(p: number) {
   const pp = planetPositions;
@@ -925,7 +925,7 @@ function ZodiacConstellation({ ci }: { ci: number }) {
       }
     }
 
-    const targetScale = featured ? 1.6 : 1.0;
+    const targetScale = featured ? 4.0 : 2.5;
 
     if (pointsRef.current) {
       const mat = pointsRef.current.material as THREE.PointsMaterial;
@@ -1007,8 +1007,17 @@ function TrineLines() {
       positions[i*6]   = pa.x; positions[i*6+1] = pa.y; positions[i*6+2] = pa.z;
       positions[i*6+3] = pb.x; positions[i*6+4] = pb.y; positions[i*6+5] = pb.z;
     });
+    // lineDistance attribute required by LineDashedMaterial for the dash pattern.
+    // For LineSegments each pair is independent: start=0, end=segment length.
+    const lineDistances = new Float32Array(6);
+    pairs.forEach(([a, b], i) => {
+      lineDistances[i * 2]     = 0;
+      lineDistances[i * 2 + 1] = CHART_POSITIONS[a].distanceTo(CHART_POSITIONS[b]);
+    });
+
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('lineDistance', new THREE.BufferAttribute(lineDistances, 1));
     geo.setDrawRange(0, 0);
     return geo;
   }), []);
@@ -1023,15 +1032,16 @@ function TrineLines() {
     geos.forEach((geo, ei) => {
       const ref = trineRefs[ei].current;
       if (!ref) return;
-      const mat = ref.material as THREE.LineBasicMaterial;
-      const isActive = act2p >= ACT2_ELEMENT_STARTS[ei] && act2p < ACT2_ELEMENT_ENDS[ei];
+      const mat = ref.material as THREE.LineDashedMaterial;
+      // act2p > 0 guard: ELEMENT_STARTS[0] = 0, so without this the first trine
+      // would be "active" during all of Act 1 where act2p sits at exactly 0.
+      const isActive = act2p > 0 && act2p >= ACT2_ELEMENT_STARTS[ei] && act2p < ACT2_ELEMENT_ENDS[ei];
 
       if (isActive) {
         drawCounts.current[ei] = Math.min(drawCounts.current[ei] + delta * DRAW_SPEED, MAX_DRAW);
-        // round to nearest even so only full segments appear
         const drawVerts = Math.floor(drawCounts.current[ei] / 2) * 2;
         geo.setDrawRange(0, drawVerts);
-        mat.opacity = THREE.MathUtils.damp(mat.opacity, 0.3, 4, delta);
+        mat.opacity = THREE.MathUtils.damp(mat.opacity, 0.17, 4, delta);
       } else {
         drawCounts.current[ei] = 0;
         geo.setDrawRange(0, 0);
@@ -1044,8 +1054,9 @@ function TrineLines() {
     <group>
       {geos.map((geo, ei) => (
         <lineSegments key={ei} ref={trineRefs[ei]} geometry={geo}>
-          <lineBasicMaterial color="#d4a843" transparent opacity={0}
-            depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+          <lineDashedMaterial color="#d4a843" dashSize={2.5} gapSize={3.5}
+            transparent opacity={0} depthWrite={false}
+            blending={THREE.AdditiveBlending} toneMapped={false} />
         </lineSegments>
       ))}
     </group>
@@ -1062,7 +1073,7 @@ function ZodiacCircle() {
     if (act2p >= ACT2_FINALE_START && act2p < ACT2_FINALE_END) {
       const t  = (act2p - ACT2_FINALE_START) / (ACT2_FINALE_END - ACT2_FINALE_START);
       const ss = t * t * (3 - 2 * t);
-      mat.opacity = THREE.MathUtils.damp(mat.opacity, ss * 0.5, 3, delta);
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, ss * 0.15, 3, delta);
     } else {
       mat.opacity = THREE.MathUtils.damp(mat.opacity, 0, 3, delta);
     }
