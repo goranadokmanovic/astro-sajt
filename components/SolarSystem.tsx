@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Sparkles, Stars, useTexture } from "@react-three/drei";
+import { Html, Sparkles, Stars, useTexture } from "@react-three/drei";
 import { Bloom, ChromaticAberration, EffectComposer, Noise, Vignette } from "@react-three/postprocessing";
 import { BlendFunction } from "postprocessing";
 import { Suspense, useEffect, useMemo, useRef } from "react";
@@ -169,54 +169,33 @@ const MARS_CAM_OFF    = new THREE.Vector3(-1.5,  1.8,  2.8 ); // elevation ~31°
 const SATURN_CAM_OFF  = new THREE.Vector3( 2.2,  2.2,  5.2 ); // elevation ~22°; rings fill frame
 const PULLBACK_POS    = new THREE.Vector3( 0,    4.0,  22.0); // matches opening — journey is a circle
 
-// ─── Act 2 / Zodiac — Sky Region ─────────────────────────────────────────────
-// Sky center: y=100, far above the solar system.
-// Station camera (0,80,25)→(0,100,0): origin is ~111° off-axis → solar system invisible.
+// ─── Act 2 — Astrological Chart in 3D ────────────────────────────────────────
+// 12 zodiac constellations encircle the solar system on the ecliptic ring.
+// One elevated three-quarter camera view for all stations and finale.
 
-const ZODIAC_SKY_Y      = 100;
-const ZODIAC_FINALE_R   = 18;      // ring radius around (0, sky_y, 0)
-const ZODIAC_SCALE_FEAT = 5.0;     // group scale when featured in triptych
-const ZODIAC_SCALE_BG   = 1.2;     // group scale when in background/circle
+const CHART_RING_R  = 30;  // outside Neptune (15.2) — zodiac ring radius
+const CHART_RING_Y  = 2;   // near ecliptic plane, slight elevation
 
-// Triptych: 3 world-space slots at sky level, facing camera from +z
-const TRIPTYCH_SLOT_POS: THREE.Vector3[] = [
-  new THREE.Vector3(-9, ZODIAC_SKY_Y, 0),
-  new THREE.Vector3( 0, ZODIAC_SKY_Y, 0),
-  new THREE.Vector3( 9, ZODIAC_SKY_Y, 0),
-];
+const CHART_CAM_POS  = new THREE.Vector3(0, 50, 60); // elevated three-quarter view
+const CHART_CAM_LOOK = new THREE.Vector3(0,  2,  0); // look near-ecliptic origin
 
-// Finale: 12 constellations evenly around (0, sky_y, 0) in XZ plane
-const FINALE_POSITIONS: THREE.Vector3[] = Array.from({ length: 12 }, (_, i) => {
+// 12 world positions for constellations on the chart ring (Aries offset, clockwise)
+const CHART_POSITIONS: THREE.Vector3[] = Array.from({ length: 12 }, (_, i) => {
   const a = (i / 12) * Math.PI * 2;
-  return new THREE.Vector3(ZODIAC_FINALE_R * Math.cos(a), ZODIAC_SKY_Y, ZODIAC_FINALE_R * Math.sin(a));
+  return new THREE.Vector3(CHART_RING_R * Math.cos(a), CHART_RING_Y, CHART_RING_R * Math.sin(a));
 });
 
 // Act 2 scroll ranges — act2Progress 0–1 over last 400vh of 1000vh.
-// Transit (0–0.12) plays during station 07 VATRA scroll; constellations invisible then.
-const ACT2_ELEMENT_STARTS = [0.12, 0.1875, 0.375, 0.5625] as const;
+// Element stations fill the full range (no transit phase in new design).
+const ACT2_ELEMENT_STARTS = [0, 0.1875, 0.375, 0.5625] as const;
 const ACT2_ELEMENT_ENDS   = [0.1875, 0.375, 0.5625, 0.75] as const;
 const ACT2_FINALE_START   = 0.75;
 const ACT2_FINALE_END     = 0.9375;
 const ACT2_ELEMENTS       = ['VATRA', 'ZEMLJA', 'VAZDUH', 'VODA'] as const;
+const _ORIGIN             = new THREE.Vector3(0, 0, 0); // pre-allocated zero
 
-// Act 2 camera waypoints
-const ZODIAC_TRANSIT_MID  = new THREE.Vector3(  0,  15,  80); // retreat — solar system tiny dot
-const ZODIAC_STATION_POS  = new THREE.Vector3(  0,  80,  25); // element stations
-const ZODIAC_STATION_LOOK = new THREE.Vector3(  0, 100,   0); // look-at for stations
-const ZODIAC_FINALE_POS   = new THREE.Vector3(  0, 125,  55); // finale — overlooks full ring
-const _ORIGIN             = new THREE.Vector3(  0,   0,   0); // pre-allocated zero
-
-// Per-element glow colors (point light tints the triptych atmosphere)
-const ELEMENT_GLOW_COLORS = [
-  new THREE.Color(0.65, 0.18, 0.06), // VATRA — ember red
-  new THREE.Color(0.30, 0.35, 0.04), // ZEMLJA — moss gold
-  new THREE.Color(0.08, 0.28, 0.70), // VAZDUH — sky blue
-  new THREE.Color(0.03, 0.12, 0.50), // VODA — deep ocean
-];
-const _elemGlowTarget = new THREE.Color();
-
-// Torus ring drawn at sky level for the finale glow
-const _zodiacRingGeo = new THREE.TorusGeometry(ZODIAC_FINALE_R, 0.06, 8, 128);
+// Torus ring at chart level for finale glow
+const _chartRingGeo = new THREE.TorusGeometry(CHART_RING_R, 0.12, 8, 128);
 
 function computeDesiredCamera(p: number) {
   const pp = planetPositions;
@@ -701,8 +680,9 @@ function getDistanceFade(distFromOrigin: number): number {
   return 1.0 - ((distFromOrigin - CLOSE) / (FAR - CLOSE)) * (1.0 - MIN);
 }
 
-// Opacity for constellation ci. Non-featured constellations during element stations → 0
-// (clean focus on the featured triptych trio). Transit phase (act2 0–0.12) → all 0.
+// Opacity for constellation ci.
+// Rest: 0.22 (dim gold, all visible). Active station: featured=1.0, others=0.05.
+// Finale: all 1.0. Post-finale: fade out.
 function getZodiacOpacity(ci: number, act2p: number): number {
   if (act2p <= 0) return 0;
   if (act2p >= ACT2_FINALE_END) {
@@ -718,15 +698,15 @@ function getZodiacOpacity(ci: number, act2p: number): number {
     if (act2p < start || act2p >= end) continue;
     const elGroup  = ELEMENT_GROUPS[ACT2_ELEMENTS[ei]];
     const localIdx = elGroup.indexOf(ci);
-    if (localIdx === -1) return 0;  // other elements — invisible
+    if (localIdx === -1) return 0.05; // non-featured — dimmed further
     const sub       = (act2p - start) / (end - start);
     const slotStart = localIdx / 3;
     const slotEnd   = (localIdx + 1) / 3;
-    if (sub < slotStart) return 0.12;
-    if (sub >= slotEnd)  return 1.0;
-    return 0.12 + (sub - slotStart) * 3 * 0.88;
+    if (sub < slotStart) return 0.22;           // waiting — rest opacity
+    if (sub >= slotEnd)  return 1.0;            // already lit
+    return 0.22 + (sub - slotStart) * 3 * 0.78; // sequential fade-in
   }
-  return 0; // transit phase
+  return 0.22; // between stations — rest visible
 }
 
 function NebulaCloud({ config }: { config: NebulaConfig }) {
@@ -889,20 +869,24 @@ function CosmicBackdrop() {
   );
 }
 
-// ─── Act 2 — Zodiac Scene ─────────────────────────────────────────────────────
+// ─── Act 2 — Astrological Chart Scene ────────────────────────────────────────
 
 function ZodiacConstellation({ ci }: { ci: number }) {
   const def       = CONSTELLATIONS[ci];
   const groupRef  = useRef<THREE.Group>(null);
   const pointsRef = useRef<THREE.Points>(null);
   const linesRef  = useRef<THREE.LineSegments>(null);
+  const labelOpacity = useRef(0);
+  const labelEl   = useRef<HTMLDivElement>(null);
 
-  // Local-space geometry: stars in XY plane, Z=0. Group is positioned in world via useFrame.
+  // Local-space geometry: stars baked at SPREAD scale, lie in XY plane.
+  // Group rotation lays them flat in ecliptic and orients tangentially around ring.
   const { starGeo, lineGeo } = useMemo(() => {
+    const SPREAD = 4.0; // world-unit spread for local coords in [-0.5, 0.5]
     const sp = new Float32Array(def.stars.length * 3);
     for (let i = 0; i < def.stars.length; i++) {
-      sp[i * 3]     = def.stars[i][0];
-      sp[i * 3 + 1] = def.stars[i][1];
+      sp[i * 3]     = def.stars[i][0] * SPREAD;
+      sp[i * 3 + 1] = def.stars[i][1] * SPREAD;
       sp[i * 3 + 2] = 0;
     }
     const sg = new THREE.BufferGeometry();
@@ -929,6 +913,20 @@ function ZodiacConstellation({ ci }: { ci: number }) {
     const base  = getZodiacOpacity(ci, act2p);
     const twinkle = 0.88 + 0.12 * Math.sin(state.clock.elapsedTime * 1.4 + twinklePhase);
 
+    let featured = false;
+    if (act2p >= ACT2_FINALE_START) {
+      featured = true;
+    } else {
+      for (let ei = 0; ei < 4; ei++) {
+        if (act2p >= ACT2_ELEMENT_STARTS[ei] && act2p < ACT2_ELEMENT_ENDS[ei]) {
+          if (ELEMENT_GROUPS[ACT2_ELEMENTS[ei]].includes(ci)) featured = true;
+          break;
+        }
+      }
+    }
+
+    const targetScale = featured ? 1.6 : 1.0;
+
     if (pointsRef.current) {
       const mat = pointsRef.current.material as THREE.PointsMaterial;
       mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle, 5, delta);
@@ -937,44 +935,29 @@ function ZodiacConstellation({ ci }: { ci: number }) {
       const mat = linesRef.current.material as THREE.LineBasicMaterial;
       mat.opacity = THREE.MathUtils.damp(mat.opacity, base * 0.45, 5, delta);
     }
-
-    if (!groupRef.current) return;
-
-    // Determine target world position and visual scale
-    let targetPos   = FINALE_POSITIONS[ci];
-    let targetScale = ZODIAC_SCALE_BG;
-
-    if (act2p < ACT2_FINALE_START) {
-      for (let ei = 0; ei < 4; ei++) {
-        if (act2p < ACT2_ELEMENT_STARTS[ei] || act2p >= ACT2_ELEMENT_ENDS[ei]) continue;
-        const localIdx = ELEMENT_GROUPS[ACT2_ELEMENTS[ei]].indexOf(ci);
-        if (localIdx !== -1) {
-          targetPos   = TRIPTYCH_SLOT_POS[localIdx];
-          targetScale = ZODIAC_SCALE_FEAT;
-        }
-        break;
-      }
+    if (groupRef.current) {
+      groupRef.current.scale.setScalar(
+        THREE.MathUtils.damp(groupRef.current.scale.x, targetScale, 3, delta)
+      );
     }
 
-    const p = groupRef.current.position;
-    p.x = THREE.MathUtils.damp(p.x, targetPos.x, 3, delta);
-    p.y = THREE.MathUtils.damp(p.y, targetPos.y, 3, delta);
-    p.z = THREE.MathUtils.damp(p.z, targetPos.z, 3, delta);
-    groupRef.current.scale.setScalar(
-      THREE.MathUtils.damp(groupRef.current.scale.x, targetScale, 3, delta)
-    );
+    const labelTarget = (featured && base > 0.5) ? 1 : 0;
+    labelOpacity.current = THREE.MathUtils.damp(labelOpacity.current, labelTarget, 4, delta);
+    if (labelEl.current) labelEl.current.style.opacity = String(labelOpacity.current);
   });
 
-  const init = FINALE_POSITIONS[ci];
+  const pos = CHART_POSITIONS[ci];
+  const angleAroundRing = (ci / 12) * Math.PI * 2;
 
+  // rotation: lay flat in ecliptic (-π/2 around X), then orient tangentially around ring
   return (
     <group
       ref={groupRef}
-      position={[init.x, init.y, init.z]}
-      scale={[ZODIAC_SCALE_BG, ZODIAC_SCALE_BG, ZODIAC_SCALE_BG]}
+      position={[pos.x, pos.y, pos.z]}
+      rotation={[-Math.PI / 2, angleAroundRing, 0]}
     >
       <points ref={pointsRef} geometry={starGeo}>
-        <pointsMaterial size={0.55} sizeAttenuation color="#f5e4b0"
+        <pointsMaterial size={0.22} sizeAttenuation color="#f5e4b0"
           transparent opacity={0} depthWrite={false}
           blending={THREE.AdditiveBlending} toneMapped={false} />
       </points>
@@ -984,6 +967,87 @@ function ZodiacConstellation({ ci }: { ci: number }) {
             depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
         </lineSegments>
       )}
+      <Html center position={[0, 0, 3.2]} style={{ pointerEvents: 'none', userSelect: 'none' }}>
+        <div
+          ref={labelEl}
+          style={{
+            opacity: 0,
+            color: '#d4a843',
+            fontFamily: 'monospace',
+            fontSize: '9px',
+            letterSpacing: '0.22em',
+            textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {def.name.toUpperCase()}
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+// Elemental trine lines — animated point-to-point draw-in for each element station.
+function TrineLines() {
+  const trineRef0 = useRef<THREE.LineSegments>(null);
+  const trineRef1 = useRef<THREE.LineSegments>(null);
+  const trineRef2 = useRef<THREE.LineSegments>(null);
+  const trineRef3 = useRef<THREE.LineSegments>(null);
+  const trineRefs = [trineRef0, trineRef1, trineRef2, trineRef3];
+  const drawCounts = useRef([0, 0, 0, 0]);
+
+  const geos = useMemo(() => ACT2_ELEMENTS.map((elem) => {
+    const group = ELEMENT_GROUPS[elem];
+    // 3 segments as pairs: P0→P1, P1→P2, P2→P0 (6 positions)
+    const pairs = [[group[0], group[1]], [group[1], group[2]], [group[2], group[0]]];
+    const positions = new Float32Array(6 * 3);
+    pairs.forEach(([a, b], i) => {
+      const pa = CHART_POSITIONS[a];
+      const pb = CHART_POSITIONS[b];
+      positions[i*6]   = pa.x; positions[i*6+1] = pa.y; positions[i*6+2] = pa.z;
+      positions[i*6+3] = pb.x; positions[i*6+4] = pb.y; positions[i*6+5] = pb.z;
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setDrawRange(0, 0);
+    return geo;
+  }), []);
+
+  useEffect(() => () => { geos.forEach(g => g.dispose()); }, [geos]);
+
+  useFrame((_, delta) => {
+    const act2p = scrollState.act2Progress;
+    const DRAW_SPEED = 1.8; // segments per second
+    const MAX_DRAW = 6;     // 3 segments × 2 vertices each
+
+    geos.forEach((geo, ei) => {
+      const ref = trineRefs[ei].current;
+      if (!ref) return;
+      const mat = ref.material as THREE.LineBasicMaterial;
+      const isActive = act2p >= ACT2_ELEMENT_STARTS[ei] && act2p < ACT2_ELEMENT_ENDS[ei];
+
+      if (isActive) {
+        drawCounts.current[ei] = Math.min(drawCounts.current[ei] + delta * DRAW_SPEED, MAX_DRAW);
+        // round to nearest even so only full segments appear
+        const drawVerts = Math.floor(drawCounts.current[ei] / 2) * 2;
+        geo.setDrawRange(0, drawVerts);
+        mat.opacity = THREE.MathUtils.damp(mat.opacity, 0.3, 4, delta);
+      } else {
+        drawCounts.current[ei] = 0;
+        geo.setDrawRange(0, 0);
+        mat.opacity = THREE.MathUtils.damp(mat.opacity, 0, 6, delta);
+      }
+    });
+  });
+
+  return (
+    <group>
+      {geos.map((geo, ei) => (
+        <lineSegments key={ei} ref={trineRefs[ei]} geometry={geo}>
+          <lineBasicMaterial color="#d4a843" transparent opacity={0}
+            depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+        </lineSegments>
+      ))}
     </group>
   );
 }
@@ -998,26 +1062,26 @@ function ZodiacCircle() {
     if (act2p >= ACT2_FINALE_START && act2p < ACT2_FINALE_END) {
       const t  = (act2p - ACT2_FINALE_START) / (ACT2_FINALE_END - ACT2_FINALE_START);
       const ss = t * t * (3 - 2 * t);
-      mat.opacity = THREE.MathUtils.damp(mat.opacity, ss * 0.65, 3, delta);
-      meshRef.current.rotation.z += delta * 0.04;
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, ss * 0.5, 3, delta);
     } else {
       mat.opacity = THREE.MathUtils.damp(mat.opacity, 0, 3, delta);
     }
   });
 
   return (
-    <mesh ref={meshRef} geometry={_zodiacRingGeo} position={[0, ZODIAC_SKY_Y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+    <mesh ref={meshRef} geometry={_chartRingGeo} position={[0, CHART_RING_Y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
       <meshBasicMaterial color="#d4a843" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
     </mesh>
   );
 }
 
-function ZodiacScene() {
+function ZodiacChart() {
   return (
     <group>
       {CONSTELLATIONS.map((_, ci) => (
         <ZodiacConstellation key={`z-${ci}`} ci={ci} />
       ))}
+      <TrineLines />
       <ZodiacCircle />
     </group>
   );
@@ -1346,41 +1410,18 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
     if (progress > 0.01 || act2p > 0) {
       computeDesiredCamera(progress);
 
-      // Act 2 camera — five phases, solar system exits frame after phase 2:
-      // 1. Retreat (0–0.08): pull back, solar system shrinks to a glowing gem
-      // 2. Turn (0.08–0.12): camera pivots to face sky region
-      // 3. Stations (0.12–0.75): fixed sky view, triptych centered in frame
-      // 4. Finale rise (0.75–0.82): ascend to overlook the full zodiac ring
-      // 5. Look-back (0.87–0.9375): camera turns — solar system reappears below
+      // Act 2 camera — one elevated three-quarter view for all stations and finale.
+      // Short smooth transition from pullback (0–0.08), then locked on chart.
       if (act2p > 0) {
         if (act2p < 0.08) {
           const ss = (t => t * t * (3 - 2 * t))(act2p / 0.08);
-          _camDesiredPos.lerpVectors(PULLBACK_POS, ZODIAC_TRANSIT_MID, ss);
-          _camDesiredLook.copy(_ORIGIN);
-        } else if (act2p < 0.12) {
-          const ss = (t => t * t * (3 - 2 * t))((act2p - 0.08) / 0.04);
-          _camDesiredPos.lerpVectors(ZODIAC_TRANSIT_MID, ZODIAC_STATION_POS, ss);
-          _camDesiredLook.lerpVectors(_ORIGIN, ZODIAC_STATION_LOOK, ss);
-        } else if (act2p < ACT2_FINALE_START) {
-          _camDesiredPos.copy(ZODIAC_STATION_POS);
-          _camDesiredLook.copy(ZODIAC_STATION_LOOK);
-        } else if (act2p < ACT2_FINALE_START + 0.07) {
-          const ss = (t => t * t * (3 - 2 * t))((act2p - ACT2_FINALE_START) / 0.07);
-          _camDesiredPos.lerpVectors(ZODIAC_STATION_POS, ZODIAC_FINALE_POS, ss);
-          _camDesiredLook.copy(ZODIAC_STATION_LOOK);
-        } else if (act2p < ACT2_FINALE_END - 0.05) {
-          _camDesiredPos.copy(ZODIAC_FINALE_POS);
-          // Slow sway: look-at drifts gently left/right around ring center
-          const sway = Math.sin(state.clock.elapsedTime * 0.18) * 5;
-          _camDesiredLook.set(sway, ZODIAC_SKY_Y, 0);
-        } else if (act2p < ACT2_FINALE_END) {
-          // Look-back: solar system reappears as camera turns downward
-          const ss = (t => t * t * (3 - 2 * t))((act2p - (ACT2_FINALE_END - 0.05)) / 0.05);
-          _camDesiredPos.copy(ZODIAC_FINALE_POS);
-          _camDesiredLook.lerpVectors(ZODIAC_STATION_LOOK, _ORIGIN, ss);
+          _camDesiredPos.lerpVectors(PULLBACK_POS, CHART_CAM_POS, ss);
+          _camDesiredLook.lerpVectors(_ORIGIN, CHART_CAM_LOOK, ss);
         } else {
-          _camDesiredPos.copy(ZODIAC_FINALE_POS);
-          _camDesiredLook.copy(_ORIGIN);
+          _camDesiredPos.copy(CHART_CAM_POS);
+          // Gentle drift: slow sway of look-at so the chart feels alive
+          const sway = Math.sin(state.clock.elapsedTime * 0.06) * 2.5;
+          _camDesiredLook.set(sway, CHART_CAM_LOOK.y, 0);
         }
       }
 
@@ -1396,25 +1437,13 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
       state.camera.lookAt(camLook.current);
     }
 
-    // Act 2 element glow — colored point light tints the triptych atmosphere
+    // Act 2 chart glow — warm gold ambient fill when chart is visible
     if (zodiacLightRef.current) {
-      let targetI = 0;
-      let activeEi = -1;
-      for (let i = 0; i < 4; i++) {
-        if (act2p >= ACT2_ELEMENT_STARTS[i] && act2p < ACT2_ELEMENT_ENDS[i]) {
-          activeEi = i;
-          const fadeIn  = Math.min((act2p - ACT2_ELEMENT_STARTS[i]) / 0.025, 1);
-          const fadeOut = Math.min((ACT2_ELEMENT_ENDS[i] - act2p) / 0.025, 1);
-          targetI = Math.min(fadeIn, fadeOut) * 3.5;
-          break;
-        }
-      }
-      if (activeEi >= 0) _elemGlowTarget.copy(ELEMENT_GLOW_COLORS[activeEi]);
-      zodiacLightRef.current.color.lerp(_elemGlowTarget, Math.min(delta * 2, 1));
+      const targetI = act2p > 0.08 ? 1.2 : 0;
       zodiacLightRef.current.intensity = THREE.MathUtils.damp(
-        zodiacLightRef.current.intensity, targetI, 3, delta,
+        zodiacLightRef.current.intensity, targetI, 2, delta,
       );
-      zodiacLightRef.current.position.set(0, ZODIAC_SKY_Y + 8, -5);
+      zodiacLightRef.current.position.set(0, CHART_RING_Y + 20, 0);
     }
 
     // Station fill light — fades in/out per station, position between camera and planet
@@ -1445,8 +1474,8 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
       <ambientLight color="#6b3fa0" intensity={AMBIENT_INTENSITY} />
       {/* Station fill — soft warm key that reveals texture on the shadow side */}
       <pointLight ref={keyLightRef} color="#fff2dd" intensity={0} distance={14} decay={2} />
-      {/* Act 2 element glow — colored atmosphere per element station */}
-      <pointLight ref={zodiacLightRef} color="#ffffff" intensity={0} distance={45} decay={1.5} />
+      {/* Act 2 chart glow — warm gold wash over the zodiac ring */}
+      <pointLight ref={zodiacLightRef} color="#d4a843" intensity={0} distance={80} decay={1.2} />
 
       <group ref={systemRef}>
         <CosmicBackdrop />
@@ -1457,7 +1486,7 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
         ))}
       </group>
 
-      <ZodiacScene />
+      <ZodiacChart />
 
       <EffectComposer multisampling={0}>
         <Bloom intensity={0.7} luminanceThreshold={0.85} mipmapBlur />
