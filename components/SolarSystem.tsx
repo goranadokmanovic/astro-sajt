@@ -176,7 +176,7 @@ const PULLBACK_POS    = new THREE.Vector3( 0,    4.0,  22.0); // matches opening
 const CHART_RING_R  = 35;  // outside Neptune (15.2) — zodiac ring radius
 const CHART_RING_Y  = 2;   // near ecliptic plane, slight elevation
 
-const CHART_CAM_POS  = new THREE.Vector3(0, 50, 60); // elevated three-quarter view
+const CHART_CAM_POS  = new THREE.Vector3(0, 50, 75); // elevated three-quarter view — pulled back to keep full ring in frame
 const CHART_CAM_LOOK = new THREE.Vector3(0,  2,  0); // look near-ecliptic origin
 
 // 12 world positions for constellations on the chart ring (Aries offset, clockwise)
@@ -669,6 +669,107 @@ function createSaturnRingTexture(): THREE.CanvasTexture {
 
 // ─── 3D Components ────────────────────────────────────────────────────────────
 
+// Star sprite: intense cool-white core, warm gold halo, 4 diffraction spikes.
+function createStarTexture(): THREE.CanvasTexture {
+  const S = 256, cx = 128, cy = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = S; canvas.height = S;
+  const ctx = canvas.getContext('2d')!;
+
+  // Outer warm-gold halo
+  const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.46);
+  halo.addColorStop(0,    'rgba(255, 240, 160, 0.55)');
+  halo.addColorStop(0.10, 'rgba(255, 210,  90, 0.32)');
+  halo.addColorStop(0.28, 'rgba(200, 155,  50, 0.11)');
+  halo.addColorStop(0.55, 'rgba(160, 100,  25, 0.03)');
+  halo.addColorStop(1,    'rgba(0,   0,    0,  0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, S, S);
+
+  // Diffraction spikes (+) drawn additively
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const spikeLen = S * 0.46;
+  for (let d = 1; d <= spikeLen; d++) {
+    const f = Math.pow(1 - d / spikeLen, 2.3);
+    const a = f * 0.78;
+    const w = Math.max(0.8, 1.6 * (1 - (d / spikeLen) * 0.5));
+    ctx.fillStyle = `rgba(255, 248, 215, ${a})`;
+    ctx.fillRect(cx + d - w / 2, cy - 0.8, w, 1.6);
+    ctx.fillRect(cx - d - w / 2, cy - 0.8, w, 1.6);
+    ctx.fillRect(cx - 0.8, cy + d - w / 2, 1.6, w);
+    ctx.fillRect(cx - 0.8, cy - d - w / 2, 1.6, w);
+  }
+  ctx.restore();
+
+  // Cool-white inner core (drawn last, sits on top)
+  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.20);
+  core.addColorStop(0,    'rgba(255, 255, 255, 1.0)');
+  core.addColorStop(0.04, 'rgba(240, 252, 255, 0.95)');
+  core.addColorStop(0.12, 'rgba(210, 235, 255, 0.58)');
+  core.addColorStop(0.28, 'rgba(170, 200, 255, 0.18)');
+  core.addColorStop(1,    'rgba(0,   0,   0,   0)');
+  ctx.fillStyle = core;
+  ctx.fillRect(0, 0, S, S);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace      = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter       = THREE.LinearMipmapLinearFilter;
+  tex.needsUpdate     = true;
+  return tex;
+}
+
+// Lazy singleton — all 12 constellations share the same texture.
+let _starTex: THREE.CanvasTexture | null = null;
+function getStarTexture(): THREE.CanvasTexture {
+  if (!_starTex) _starTex = createStarTexture();
+  return _starTex;
+}
+
+// Soft radial mist texture for elemental trine nebula, tinted by element color.
+function createMistTexture(hex: string): THREE.CanvasTexture {
+  const S = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = S; canvas.height = S;
+  const ctx = canvas.getContext('2d')!;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+
+  // Multiple overlapping blobs give an organic cloud look
+  const blobs = [
+    { x: 0.50, y: 0.50, rad: 0.44, a: 0.55 },
+    { x: 0.43, y: 0.54, rad: 0.29, a: 0.28 },
+    { x: 0.58, y: 0.42, rad: 0.27, a: 0.22 },
+    { x: 0.48, y: 0.38, rad: 0.19, a: 0.18 },
+  ];
+  for (const bl of blobs) {
+    const grd = ctx.createRadialGradient(
+      bl.x * S, bl.y * S, 0, bl.x * S, bl.y * S, bl.rad * S
+    );
+    grd.addColorStop(0,    `rgba(${r},${g},${b},${bl.a})`);
+    grd.addColorStop(0.40, `rgba(${r},${g},${b},${(bl.a * 0.38).toFixed(3)})`);
+    grd.addColorStop(0.75, `rgba(${r},${g},${b},${(bl.a * 0.07).toFixed(3)})`);
+    grd.addColorStop(1,    'rgba(0,0,0,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, S, S);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace      = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter       = THREE.LinearMipmapLinearFilter;
+  tex.needsUpdate     = true;
+  return tex;
+}
+
+const _mistTexCache: Map<string, THREE.CanvasTexture> = new Map();
+function getMistTexture(color: string): THREE.CanvasTexture {
+  if (!_mistTexCache.has(color)) _mistTexCache.set(color, createMistTexture(color));
+  return _mistTexCache.get(color)!;
+}
+
 // Returns 1.0 when camera is close (stations), fades toward MIN at wide-view distance.
 // Ensures overlapping mist planes don't accumulate into a "purple wall" at the opening shot.
 function getDistanceFade(distFromOrigin: number): number {
@@ -872,39 +973,50 @@ function CosmicBackdrop() {
 // ─── Act 2 — Astrological Chart Scene ────────────────────────────────────────
 
 function ZodiacConstellation({ ci }: { ci: number }) {
-  const def       = CONSTELLATIONS[ci];
-  const groupRef  = useRef<THREE.Group>(null);
-  const pointsRef = useRef<THREE.Points>(null);
-  const linesRef  = useRef<THREE.LineSegments>(null);
+  const def        = CONSTELLATIONS[ci];
+  const groupRef   = useRef<THREE.Group>(null);
+  const anchorRef  = useRef<THREE.Points>(null);   // 1 brightest anchor star
+  const normalRef  = useRef<THREE.Points>(null);   // remaining stars
+  const linesRef   = useRef<THREE.LineSegments>(null);
   const labelOpacity = useRef(0);
-  const labelEl   = useRef<HTMLDivElement>(null);
+  const labelEl    = useRef<HTMLDivElement>(null);
 
-  // Local-space geometry: stars baked at SPREAD scale, lie in XY plane.
-  // Group rotation lays them flat in ecliptic and orients tangentially around ring.
-  const { starGeo, lineGeo } = useMemo(() => {
-    const SPREAD = 4.0; // world-unit spread for local coords in [-0.5, 0.5]
-    const sp = new Float32Array(def.stars.length * 3);
+  const { anchorGeo, normalGeo, lineGeo } = useMemo(() => {
+    const SPREAD = 4.0;
+    // First star = anchor (principal); rest = normal
+    const ap = new Float32Array(3);
+    const np = new Float32Array((def.stars.length - 1) * 3);
     for (let i = 0; i < def.stars.length; i++) {
-      sp[i * 3]     = def.stars[i][0] * SPREAD;
-      sp[i * 3 + 1] = def.stars[i][1] * SPREAD;
-      sp[i * 3 + 2] = 0;
+      const x = def.stars[i][0] * SPREAD;
+      const y = def.stars[i][1] * SPREAD;
+      if (i === 0) {
+        ap[0] = x; ap[1] = y; ap[2] = 0;
+      } else {
+        const ni = i - 1;
+        np[ni * 3] = x; np[ni * 3 + 1] = y; np[ni * 3 + 2] = 0;
+      }
     }
-    const sg = new THREE.BufferGeometry();
-    sg.setAttribute("position", new THREE.BufferAttribute(sp, 3));
+    const ag = new THREE.BufferGeometry();
+    ag.setAttribute('position', new THREE.BufferAttribute(ap, 3));
+    const ng = new THREE.BufferGeometry();
+    ng.setAttribute('position', new THREE.BufferAttribute(np, 3));
 
     const lp = new Float32Array(def.lines.length * 6);
     for (let i = 0; i < def.lines.length; i++) {
       const [a, b] = def.lines[i];
-      lp[i*6]   = sp[a*3];   lp[i*6+1] = sp[a*3+1]; lp[i*6+2] = 0;
-      lp[i*6+3] = sp[b*3];   lp[i*6+4] = sp[b*3+1]; lp[i*6+5] = 0;
+      const s = def.stars;
+      lp[i*6]   = s[a][0]*SPREAD; lp[i*6+1] = s[a][1]*SPREAD; lp[i*6+2] = 0;
+      lp[i*6+3] = s[b][0]*SPREAD; lp[i*6+4] = s[b][1]*SPREAD; lp[i*6+5] = 0;
     }
     const lg = new THREE.BufferGeometry();
-    lg.setAttribute("position", new THREE.BufferAttribute(lp, 3));
+    lg.setAttribute('position', new THREE.BufferAttribute(lp, 3));
 
-    return { starGeo: sg, lineGeo: lg };
+    return { anchorGeo: ag, normalGeo: ng, lineGeo: lg };
   }, [ci, def]);
 
-  useEffect(() => () => { starGeo.dispose(); lineGeo.dispose(); }, [starGeo, lineGeo]);
+  useEffect(() => () => {
+    anchorGeo.dispose(); normalGeo.dispose(); lineGeo.dispose();
+  }, [anchorGeo, normalGeo, lineGeo]);
 
   const twinklePhase = (ci * 2.71828) % (Math.PI * 2);
 
@@ -927,13 +1039,18 @@ function ZodiacConstellation({ ci }: { ci: number }) {
 
     const targetScale = featured ? 4.0 : 2.5;
 
-    if (pointsRef.current) {
-      const mat = pointsRef.current.material as THREE.PointsMaterial;
+    if (anchorRef.current) {
+      const mat = anchorRef.current.material as THREE.PointsMaterial;
       mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle, 5, delta);
+    }
+    if (normalRef.current) {
+      const mat = normalRef.current.material as THREE.PointsMaterial;
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle * 0.85, 5, delta);
     }
     if (linesRef.current) {
       const mat = linesRef.current.material as THREE.LineBasicMaterial;
-      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * 0.45, 5, delta);
+      // Very faint — just enough to see when looking for them
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * 0.10, 5, delta);
     }
     if (groupRef.current) {
       groupRef.current.scale.setScalar(
@@ -949,21 +1066,27 @@ function ZodiacConstellation({ ci }: { ci: number }) {
   const pos = CHART_POSITIONS[ci];
   const angleAroundRing = (ci / 12) * Math.PI * 2;
 
-  // rotation: lay flat in ecliptic (-π/2 around X), then orient tangentially around ring
   return (
     <group
       ref={groupRef}
       position={[pos.x, pos.y, pos.z]}
       rotation={[-Math.PI / 2, angleAroundRing, 0]}
     >
-      <points ref={pointsRef} geometry={starGeo}>
-        <pointsMaterial size={0.22} sizeAttenuation color="#f5e4b0"
-          transparent opacity={0} depthWrite={false}
-          blending={THREE.AdditiveBlending} toneMapped={false} />
+      {/* Anchor star — largest, photographic-spike texture */}
+      <points ref={anchorRef} geometry={anchorGeo}>
+        <pointsMaterial size={2.2} sizeAttenuation map={getStarTexture()}
+          color="#ffffff" transparent opacity={0}
+          depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+      </points>
+      {/* Normal stars — slightly smaller */}
+      <points ref={normalRef} geometry={normalGeo}>
+        <pointsMaterial size={1.4} sizeAttenuation map={getStarTexture()}
+          color="#ffffff" transparent opacity={0}
+          depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </points>
       {def.lines.length > 0 && (
         <lineSegments ref={linesRef} geometry={lineGeo}>
-          <lineBasicMaterial color="#d4a843" transparent opacity={0}
+          <lineBasicMaterial color="#c8a060" transparent opacity={0}
             depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
         </lineSegments>
       )}
@@ -987,77 +1110,92 @@ function ZodiacConstellation({ ci }: { ci: number }) {
   );
 }
 
-// Elemental trine lines — animated point-to-point draw-in for each element station.
-function TrineLines() {
-  const trineRef0 = useRef<THREE.LineSegments>(null);
-  const trineRef1 = useRef<THREE.LineSegments>(null);
-  const trineRef2 = useRef<THREE.LineSegments>(null);
-  const trineRef3 = useRef<THREE.LineSegments>(null);
-  const trineRefs = [trineRef0, trineRef1, trineRef2, trineRef3];
-  const drawCounts = useRef([0, 0, 0, 0]);
+// ─── Elemental Trine Nebula ───────────────────────────────────────────────────
+// Cosmic mist hinting at the triangle between active element constellations.
+// Uses layered additive sprite planes — never drawn geometry.
 
-  const geos = useMemo(() => ACT2_ELEMENTS.map((elem) => {
-    const group = ELEMENT_GROUPS[elem];
-    // 3 segments as pairs: P0→P1, P1→P2, P2→P0 (6 positions)
-    const pairs = [[group[0], group[1]], [group[1], group[2]], [group[2], group[0]]];
-    const positions = new Float32Array(6 * 3);
-    pairs.forEach(([a, b], i) => {
-      const pa = CHART_POSITIONS[a];
-      const pb = CHART_POSITIONS[b];
-      positions[i*6]   = pa.x; positions[i*6+1] = pa.y; positions[i*6+2] = pa.z;
-      positions[i*6+3] = pb.x; positions[i*6+4] = pb.y; positions[i*6+5] = pb.z;
-    });
-    // lineDistance attribute required by LineDashedMaterial for the dash pattern.
-    // For LineSegments each pair is independent: start=0, end=segment length.
-    const lineDistances = new Float32Array(6);
-    pairs.forEach(([a, b], i) => {
-      lineDistances[i * 2]     = 0;
-      lineDistances[i * 2 + 1] = CHART_POSITIONS[a].distanceTo(CHART_POSITIONS[b]);
-    });
+const MIST_COLORS = {
+  VATRA:  '#c04820',  // warm amber
+  ZEMLJA: '#607030',  // soft green-gold
+  VAZDUH: '#3868c0',  // pale blue
+  VODA:   '#2040a0',  // deep blue
+} as const;
 
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('lineDistance', new THREE.BufferAttribute(lineDistances, 1));
-    geo.setDrawRange(0, 0);
-    return geo;
-  }), []);
+function ElementMist({ ei }: { ei: number }) {
+  const elem = ACT2_ELEMENTS[ei];
+  const grp  = ELEMENT_GROUPS[elem];
+  const p0   = CHART_POSITIONS[grp[0]];
+  const p1   = CHART_POSITIONS[grp[1]];
+  const p2   = CHART_POSITIONS[grp[2]];
+  const spawnY = CHART_RING_Y + 0.5;
 
-  useEffect(() => () => { geos.forEach(g => g.dispose()); }, [geos]);
+  // 4 sprite positions: centroid + 3 edge midpoints
+  const positions = useMemo<THREE.Vector3[]>(() => [
+    new THREE.Vector3((p0.x+p1.x+p2.x)/3, spawnY, (p0.z+p1.z+p2.z)/3),
+    new THREE.Vector3((p0.x+p1.x)/2,        spawnY, (p0.z+p1.z)/2),
+    new THREE.Vector3((p1.x+p2.x)/2,        spawnY, (p1.z+p2.z)/2),
+    new THREE.Vector3((p2.x+p0.x)/2,        spawnY, (p2.z+p0.z)/2),
+  ], []);
 
-  useFrame((_, delta) => {
-    const act2p = scrollState.act2Progress;
-    const DRAW_SPEED = 1.8; // segments per second
-    const MAX_DRAW = 6;     // 3 segments × 2 vertices each
+  const triRadius = useMemo(() => {
+    const c = positions[0];
+    return Math.max(c.distanceTo(new THREE.Vector3(p0.x, spawnY, p0.z)), 16);
+  }, []);
 
-    geos.forEach((geo, ei) => {
-      const ref = trineRefs[ei].current;
-      if (!ref) return;
-      const mat = ref.material as THREE.LineDashedMaterial;
-      // act2p > 0 guard: ELEMENT_STARTS[0] = 0, so without this the first trine
-      // would be "active" during all of Act 1 where act2p sits at exactly 0.
-      const isActive = act2p > 0 && act2p >= ACT2_ELEMENT_STARTS[ei] && act2p < ACT2_ELEMENT_ENDS[ei];
+  // Centroid sprite largest; edge sprites smaller
+  const scales     = [triRadius * 2.4, triRadius * 1.5, triRadius * 1.4, triRadius * 1.3];
+  const baseAlphas = [0.08, 0.05, 0.05, 0.04];
 
-      if (isActive) {
-        drawCounts.current[ei] = Math.min(drawCounts.current[ei] + delta * DRAW_SPEED, MAX_DRAW);
-        const drawVerts = Math.floor(drawCounts.current[ei] / 2) * 2;
-        geo.setDrawRange(0, drawVerts);
-        mat.opacity = THREE.MathUtils.damp(mat.opacity, 0.17, 4, delta);
-      } else {
-        drawCounts.current[ei] = 0;
-        geo.setDrawRange(0, 0);
-        mat.opacity = THREE.MathUtils.damp(mat.opacity, 0, 6, delta);
-      }
+  const meshRef0 = useRef<THREE.Mesh>(null);
+  const meshRef1 = useRef<THREE.Mesh>(null);
+  const meshRef2 = useRef<THREE.Mesh>(null);
+  const meshRef3 = useRef<THREE.Mesh>(null);
+  const meshRefs = [meshRef0, meshRef1, meshRef2, meshRef3];
+  const opRef    = useRef(0);
+
+  const tex = useMemo(() => getMistTexture(MIST_COLORS[elem]), []);
+
+  useFrame((state, delta) => {
+    const act2p   = scrollState.act2Progress;
+    const isActive = act2p > 0 && act2p >= ACT2_ELEMENT_STARTS[ei] && act2p < ACT2_ELEMENT_ENDS[ei];
+    opRef.current = THREE.MathUtils.damp(opRef.current, isActive ? 1.0 : 0, 2, delta);
+
+    const t = state.clock.elapsedTime;
+    meshRefs.forEach((ref, mi) => {
+      if (!ref.current) return;
+      (ref.current.material as THREE.MeshBasicMaterial).opacity = opRef.current * baseAlphas[mi];
+      // Slow drift per sprite
+      const dX = Math.sin(t * 0.07 + mi * 1.3) * triRadius * 0.08;
+      const dZ = Math.cos(t * 0.055 + mi * 0.8) * triRadius * 0.08;
+      ref.current.position.x = positions[mi].x + dX;
+      ref.current.position.z = positions[mi].z + dZ;
+      // Gentle breathing scale
+      const breathe = 1 + Math.sin(t * 0.10 + mi * 2.4) * 0.06;
+      ref.current.scale.setScalar(scales[mi] * breathe);
     });
   });
 
   return (
     <group>
-      {geos.map((geo, ei) => (
-        <lineSegments key={ei} ref={trineRefs[ei]} geometry={geo}>
-          <lineDashedMaterial color="#d4a843" dashSize={2.5} gapSize={3.5}
-            transparent opacity={0} depthWrite={false}
-            blending={THREE.AdditiveBlending} toneMapped={false} />
-        </lineSegments>
+      {positions.map((pos, mi) => (
+        <mesh key={mi} ref={meshRefs[mi]}
+          position={[pos.x, pos.y, pos.z]}
+          rotation={[-Math.PI / 2, 0, 0]}
+        >
+          <planeGeometry args={[1, 1]} />
+          <meshBasicMaterial map={tex} transparent opacity={0}
+            depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function TrineNebula() {
+  return (
+    <group>
+      {ACT2_ELEMENTS.map((_, ei) => (
+        <ElementMist key={ei} ei={ei} />
       ))}
     </group>
   );
@@ -1092,7 +1230,7 @@ function ZodiacChart() {
       {CONSTELLATIONS.map((_, ci) => (
         <ZodiacConstellation key={`z-${ci}`} ci={ci} />
       ))}
-      <TrineLines />
+      <TrineNebula />
       <ZodiacCircle />
     </group>
   );
@@ -1446,6 +1584,16 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
 
       state.camera.position.copy(camPos.current);
       state.camera.lookAt(camLook.current);
+
+      // FOV: Act 1 = 50°, Act 2 = 58° (wider — keeps full ring in frame at all stations)
+      const cam = state.camera as THREE.PerspectiveCamera;
+      if ('fov' in cam) {
+        const targetFov = act2p > 0.04 ? 58 : 50;
+        if (Math.abs(cam.fov - targetFov) > 0.05) {
+          cam.fov = THREE.MathUtils.damp(cam.fov, targetFov, 1.5, delta);
+          cam.updateProjectionMatrix();
+        }
+      }
     }
 
     // Act 2 chart glow — warm gold ambient fill when chart is visible
