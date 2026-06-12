@@ -1074,13 +1074,13 @@ function ZodiacConstellation({ ci }: { ci: number }) {
     >
       {/* Anchor star — largest, photographic-spike texture */}
       <points ref={anchorRef} geometry={anchorGeo}>
-        <pointsMaterial size={2.2} sizeAttenuation map={getStarTexture()}
+        <pointsMaterial size={6} sizeAttenuation map={getStarTexture()}
           color="#ffffff" transparent opacity={0}
           depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </points>
       {/* Normal stars — slightly smaller */}
       <points ref={normalRef} geometry={normalGeo}>
-        <pointsMaterial size={1.4} sizeAttenuation map={getStarTexture()}
+        <pointsMaterial size={4} sizeAttenuation map={getStarTexture()}
           color="#ffffff" transparent opacity={0}
           depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </points>
@@ -1124,69 +1124,52 @@ const MIST_COLORS = {
 function ElementMist({ ei }: { ei: number }) {
   const elem = ACT2_ELEMENTS[ei];
   const grp  = ELEMENT_GROUPS[elem];
-  const p0   = CHART_POSITIONS[grp[0]];
-  const p1   = CHART_POSITIONS[grp[1]];
-  const p2   = CHART_POSITIONS[grp[2]];
-  const spawnY = CHART_RING_Y + 0.5;
+  // Halos centered directly at constellation ring positions (radius 35).
+  // Centroid of equilateral triangle inscribed in any circle = circle center = solar system.
+  // Never use centroids or edge midpoints — always the 3 constellation positions themselves.
+  const p0 = CHART_POSITIONS[grp[0]];
+  const p1 = CHART_POSITIONS[grp[1]];
+  const p2 = CHART_POSITIONS[grp[2]];
 
-  // 4 sprite positions: centroid + 3 edge midpoints
-  const positions = useMemo<THREE.Vector3[]>(() => [
-    new THREE.Vector3((p0.x+p1.x+p2.x)/3, spawnY, (p0.z+p1.z+p2.z)/3),
-    new THREE.Vector3((p0.x+p1.x)/2,        spawnY, (p0.z+p1.z)/2),
-    new THREE.Vector3((p1.x+p2.x)/2,        spawnY, (p1.z+p2.z)/2),
-    new THREE.Vector3((p2.x+p0.x)/2,        spawnY, (p2.z+p0.z)/2),
-  ], []);
+  const HALO_SCALE = 14;
+  const BASE_ALPHA = 0.07;
 
-  const triRadius = useMemo(() => {
-    const c = positions[0];
-    return Math.max(c.distanceTo(new THREE.Vector3(p0.x, spawnY, p0.z)), 16);
-  }, []);
-
-  // Centroid sprite largest; edge sprites smaller
-  const scales     = [triRadius * 2.4, triRadius * 1.5, triRadius * 1.4, triRadius * 1.3];
-  const baseAlphas = [0.08, 0.05, 0.05, 0.04];
-
-  const meshRef0 = useRef<THREE.Mesh>(null);
-  const meshRef1 = useRef<THREE.Mesh>(null);
-  const meshRef2 = useRef<THREE.Mesh>(null);
-  const meshRef3 = useRef<THREE.Mesh>(null);
-  const meshRefs = [meshRef0, meshRef1, meshRef2, meshRef3];
-  const opRef    = useRef(0);
+  const ref0  = useRef<THREE.Sprite>(null);
+  const ref1  = useRef<THREE.Sprite>(null);
+  const ref2  = useRef<THREE.Sprite>(null);
+  const opRef = useRef(0);
 
   const tex = useMemo(() => getMistTexture(MIST_COLORS[elem]), []);
 
   useFrame((state, delta) => {
-    const act2p   = scrollState.act2Progress;
+    const act2p    = scrollState.act2Progress;
     const isActive = act2p > 0 && act2p >= ACT2_ELEMENT_STARTS[ei] && act2p < ACT2_ELEMENT_ENDS[ei];
-    opRef.current = THREE.MathUtils.damp(opRef.current, isActive ? 1.0 : 0, 2, delta);
+    opRef.current  = THREE.MathUtils.damp(opRef.current, isActive ? 1.0 : 0, 2, delta);
 
     const t = state.clock.elapsedTime;
-    meshRefs.forEach((ref, mi) => {
-      if (!ref.current) return;
-      (ref.current.material as THREE.MeshBasicMaterial).opacity = opRef.current * baseAlphas[mi];
-      // Slow drift per sprite
-      const dX = Math.sin(t * 0.07 + mi * 1.3) * triRadius * 0.08;
-      const dZ = Math.cos(t * 0.055 + mi * 0.8) * triRadius * 0.08;
-      ref.current.position.x = positions[mi].x + dX;
-      ref.current.position.z = positions[mi].z + dZ;
-      // Gentle breathing scale
-      const breathe = 1 + Math.sin(t * 0.10 + mi * 2.4) * 0.06;
-      ref.current.scale.setScalar(scales[mi] * breathe);
+    const halos = [ref0.current, ref1.current, ref2.current];
+    halos.forEach((sprite, mi) => {
+      if (!sprite) return;
+      (sprite.material as THREE.SpriteMaterial).opacity = opRef.current * BASE_ALPHA;
+      const breathe = 1 + Math.sin(t * 0.10 + mi * 2.1) * 0.05;
+      sprite.scale.setScalar(HALO_SCALE * breathe);
     });
   });
 
   return (
     <group>
-      {positions.map((pos, mi) => (
-        <mesh key={mi} ref={meshRefs[mi]}
-          position={[pos.x, pos.y, pos.z]}
-          rotation={[-Math.PI / 2, 0, 0]}
-        >
-          <planeGeometry args={[1, 1]} />
-          <meshBasicMaterial map={tex} transparent opacity={0}
-            depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
-        </mesh>
-      ))}
+      <sprite ref={ref0} position={[p0.x, p0.y, p0.z]} scale={[HALO_SCALE, HALO_SCALE, 1]}>
+        <spriteMaterial map={tex} transparent opacity={0}
+          depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+      </sprite>
+      <sprite ref={ref1} position={[p1.x, p1.y, p1.z]} scale={[HALO_SCALE, HALO_SCALE, 1]}>
+        <spriteMaterial map={tex} transparent opacity={0}
+          depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+      </sprite>
+      <sprite ref={ref2} position={[p2.x, p2.y, p2.z]} scale={[HALO_SCALE, HALO_SCALE, 1]}>
+        <spriteMaterial map={tex} transparent opacity={0}
+          depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+      </sprite>
     </group>
   );
 }
