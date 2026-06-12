@@ -1,5 +1,6 @@
 import Header from "@/components/Header";
 import ScrollJourneyHero from "@/components/ScrollJourneyHero";
+import EnergyZone from "@/components/EnergyZone";
 import Intro from "@/components/sections/Intro";
 import Services from "@/components/sections/Services";
 import About from "@/components/sections/About";
@@ -12,6 +13,7 @@ export default function Home() {
       <Header />
       <main>
         <ScrollJourneyHero />
+        <EnergyZone />
         <Intro />
         <Services />
         <About />

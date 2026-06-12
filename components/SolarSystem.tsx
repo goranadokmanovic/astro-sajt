@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, Sparkles, Stars, useTexture } from "@react-three/drei";
 import { Bloom, ChromaticAberration, EffectComposer, Noise, Vignette } from "@react-three/postprocessing";
 import { BlendFunction } from "postprocessing";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { scrollState, planetPositions } from "@/lib/scrollState";
 import { CONSTELLATIONS, ELEMENT_GROUPS } from "@/lib/zodiac";
@@ -1117,8 +1117,14 @@ function ZodiacConstellation({ ci }: { ci: number }) {
     const isFinaleAll    = act2p >= ACT2_FINALE_START;
     const isActiveTriple = featured && !isFinaleAll; // active trio at a station only
     const finaleGlowMult = isFinaleAll ? 0.85 : 1.0;
-    const targetAnchorPx = isFinaleAll ? 68 : (isActiveTriple ? 80 : 50);
-    const targetNormalPx = isFinaleAll ? 34 : (isActiveTriple ? 40 : 25);
+    let targetAnchorPx = isFinaleAll ? 68 : (isActiveTriple ? 80 : 50);
+    let targetNormalPx = isFinaleAll ? 34 : (isActiveTriple ? 40 : 25);
+    // Fly-through: the target constellation's stars swell in pixel size as camera approaches.
+    if (act2p >= ACT2_EXIT_START && ci === ACT2_FLY_CONST) {
+      const exitT = (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START);
+      targetAnchorPx = 68 + exitT * 140; // 68 → 208 px
+      targetNormalPx = 34 + exitT * 90;  // 34 → 124 px
+    }
 
     // Line opacity: focus-only logic.
     // Intro: all lines fade in with their constellation.
@@ -1646,7 +1652,7 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
           const lavPos = CHART_POSITIONS[ACT2_FLY_CONST];
           const dist   = CHART_CAM_POS.distanceTo(lavPos);
           _camFlyDir.subVectors(lavPos, CHART_CAM_POS).normalize();
-          _camDesiredPos.copy(CHART_CAM_POS).addScaledVector(_camFlyDir, ss * (dist + 12));
+          _camDesiredPos.copy(CHART_CAM_POS).addScaledVector(_camFlyDir, ss * (dist + 40));
           _camDesiredLook.lerpVectors(CHART_CAM_LOOK, lavPos, Math.min(ss * 2, 1));
         } else if (act2p < 0.08) {
           // Rise from pullback to overview.
@@ -1817,6 +1823,25 @@ export default function SolarSystem() {
     tiltRefs.current.targetZ = 0;
   };
 
+  // Pause GPU when fully past the 3D journey — resume when scrolled back.
+  const [frameloop, setFrameloop] = useState<"always" | "never">("always");
+  useEffect(() => {
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const next: "always" | "never" =
+          scrollState.act2Progress >= 0.99 ? "never" : "always";
+        setFrameloop(prev => (prev === next ? prev : next));
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+
   return (
     <div
       ref={containerRef}
@@ -1825,6 +1850,7 @@ export default function SolarSystem() {
       onPointerLeave={handlePointerLeave}
     >
       <Canvas
+        frameloop={frameloop}
         camera={{ position: [0, 4, 22], fov: 50, near: 0.1, far: 500 }}
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: false }}
