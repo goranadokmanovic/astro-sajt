@@ -158,6 +158,7 @@ const MOON_ORBIT_SPEED = 1.8;
 const _camDesiredPos = new THREE.Vector3();
 const _camDesiredLook = new THREE.Vector3();
 const _planetWorldPos = new THREE.Vector3();
+const _camFlyDir     = new THREE.Vector3();
 
 // Camera offsets — ~30° above the orbital plane so frozen planets on the orbital plane
 // drop below the view axis and leave dark sky as the dominant background (hero portrait).
@@ -185,14 +186,20 @@ const CHART_POSITIONS: THREE.Vector3[] = Array.from({ length: 12 }, (_, i) => {
   return new THREE.Vector3(CHART_RING_R * Math.cos(a), CHART_RING_Y, CHART_RING_R * Math.sin(a));
 });
 
-// Act 2 scroll ranges — act2Progress 0–1 over last 400vh of 1000vh.
-// Element stations fill the full range (no transit phase in new design).
-const ACT2_ELEMENT_STARTS = [0, 0.1875, 0.375, 0.5625] as const;
-const ACT2_ELEMENT_ENDS   = [0.1875, 0.375, 0.5625, 0.75] as const;
-const ACT2_FINALE_START   = 0.75;
-const ACT2_FINALE_END     = 0.9375;
+// Act 2 scroll ranges — act2Progress 0→1 over last 400vh of 1000vh.
+// Phase 0: INTRO BEAT — all 12 at full brightness (grand reveal), no labels, no mist.
+// Phases 1–4: element stations — active trio full, others dimmed to 30%.
+// Phase 5: FINALE — all 12 lit, all labels, ring visible.
+// Phase 6: EXIT — camera flies toward/through ACT2_FLY_CONST constellation.
+const ACT2_INTRO_END      = 0.1875;   // intro beat ends; first element station begins
+const ACT2_ELEMENT_STARTS = [0.1875, 0.325, 0.4625, 0.60] as const;
+const ACT2_ELEMENT_ENDS   = [0.325, 0.4625, 0.60, 0.7375] as const;
+const ACT2_FINALE_START   = 0.7375;
+const ACT2_FINALE_END     = 0.8875;
+const ACT2_EXIT_START     = 0.9375;   // camera fly-through begins
+const ACT2_FLY_CONST      = 4;        // Lav — constellation index to fly through (0–11)
 const ACT2_ELEMENTS       = ['VATRA', 'ZEMLJA', 'VAZDUH', 'VODA'] as const;
-const _ORIGIN             = new THREE.Vector3(0, 0, 0); // pre-allocated zero
+const _ORIGIN             = new THREE.Vector3(0, 0, 0);
 
 // Torus ring at chart level for finale — hairline, very subtle
 const _chartRingGeo = new THREE.TorusGeometry(CHART_RING_R, 0.035, 8, 128);
@@ -702,12 +709,13 @@ function createStarTexture(): THREE.CanvasTexture {
   }
   ctx.restore();
 
-  // Cool-white inner core (drawn last, sits on top)
-  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.20);
+  // Cool-white inner core — flat solid disk out to 25% of gradient radius, then soft fade.
+  // Large radius (S*0.35) ensures the bright region is unmistakably bigger than a background dot.
+  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.35);
   core.addColorStop(0,    'rgba(255, 255, 255, 1.0)');
-  core.addColorStop(0.04, 'rgba(240, 252, 255, 0.95)');
-  core.addColorStop(0.12, 'rgba(210, 235, 255, 0.58)');
-  core.addColorStop(0.28, 'rgba(170, 200, 255, 0.18)');
+  core.addColorStop(0.25, 'rgba(255, 255, 255, 1.0)');
+  core.addColorStop(0.50, 'rgba(230, 245, 255, 0.65)');
+  core.addColorStop(0.75, 'rgba(180, 210, 255, 0.22)');
   core.addColorStop(1,    'rgba(0,   0,   0,   0)');
   ctx.fillStyle = core;
   ctx.fillRect(0, 0, S, S);
@@ -781,33 +789,44 @@ function getDistanceFade(distFromOrigin: number): number {
   return 1.0 - ((distFromOrigin - CLOSE) / (FAR - CLOSE)) * (1.0 - MIN);
 }
 
-// Opacity for constellation ci.
-// Rest: 0.22 (dim gold, all visible). Active station: featured=1.0, others=0.05.
-// Finale: all 1.0. Post-finale: fade out.
+// Opacity for constellation ci at a given act2 scroll position.
+// INTRO: all 12 at 1.0. STATIONS: active trio → 1.0, others → 0.30.
+// FINALE: all 1.0. EXIT: fly-through target stays, rest fade.
 function getZodiacOpacity(ci: number, act2p: number): number {
   if (act2p <= 0) return 0;
-  if (act2p >= ACT2_FINALE_END) {
-    return Math.max(0, 1 - (act2p - ACT2_FINALE_END) / (1 - ACT2_FINALE_END));
+
+  // INTRO BEAT — all 12 rise to full brightness simultaneously
+  if (act2p < ACT2_INTRO_END) {
+    return Math.min(act2p / (ACT2_INTRO_END * 0.35), 1);
   }
+
+  // EXIT FLY-THROUGH — fly-through target stays lit, others fade out
+  if (act2p >= ACT2_EXIT_START) {
+    const t = (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START);
+    return ci === ACT2_FLY_CONST ? 1 : Math.max(0, 1 - t * 1.4);
+  }
+
+  // POST-FINALE HOLD — all 12 fully lit between finale end and exit start
+  if (act2p >= ACT2_FINALE_END) return 1;
+
+  // FINALE — all 12 fade in together
   if (act2p >= ACT2_FINALE_START) {
     const t = (act2p - ACT2_FINALE_START) / (ACT2_FINALE_END - ACT2_FINALE_START);
     return Math.min(t * 2, 1);
   }
+
+  // ELEMENT STATIONS — active trio surges to 1.0, other 9 hold at 0.30
   for (let ei = 0; ei < 4; ei++) {
     const start = ACT2_ELEMENT_STARTS[ei];
     const end   = ACT2_ELEMENT_ENDS[ei];
     if (act2p < start || act2p >= end) continue;
-    const elGroup  = ELEMENT_GROUPS[ACT2_ELEMENTS[ei]];
-    const localIdx = elGroup.indexOf(ci);
-    if (localIdx === -1) return 0.05; // non-featured — dimmed further
-    const sub       = (act2p - start) / (end - start);
-    const slotStart = localIdx / 3;
-    const slotEnd   = (localIdx + 1) / 3;
-    if (sub < slotStart) return 0.22;           // waiting — rest opacity
-    if (sub >= slotEnd)  return 1.0;            // already lit
-    return 0.22 + (sub - slotStart) * 3 * 0.78; // sequential fade-in
+    const isActive = ELEMENT_GROUPS[ACT2_ELEMENTS[ei]].includes(ci);
+    if (!isActive) return 0.30;
+    const sub = (act2p - start) / (end - start);
+    return 0.30 + Math.min(sub / 0.30, 1.0) * 0.70;
   }
-  return 0.22; // between stations — rest visible
+
+  return 1.0;
 }
 
 function NebulaCloud({ config }: { config: NebulaConfig }) {
@@ -911,6 +930,25 @@ function VeilCloud({ config }: { config: VeilConfig }) {
 }
 
 function CosmicBackdrop() {
+  const stars1Ref = useRef<THREE.Points>(null);
+  const stars2Ref = useRef<THREE.Points>(null);
+  const bgCapDone = useRef(false);
+
+  // Cap background star brightness once refs resolve.
+  // Background stars are dust — constellation stars must always outshine them.
+  useFrame(() => {
+    if (bgCapDone.current) return;
+    const r1 = stars1Ref.current;
+    const r2 = stars2Ref.current;
+    if (!r1 || !r2) return;
+    for (const r of [r1, r2]) {
+      const mat = r.material as THREE.PointsMaterial;
+      mat.transparent = true;
+      mat.opacity = 0.45;
+    }
+    bgCapDone.current = true;
+  });
+
   return (
     <group renderOrder={-1}>
       {NEBULAE.map((nebula, index) => (
@@ -921,19 +959,21 @@ function CosmicBackdrop() {
       ))}
 
       <Stars
+        ref={stars1Ref}
         radius={120}
         depth={60}
         count={4500}
-        factor={5}
+        factor={3}
         saturation={0.35}
         fade
         speed={0.25}
       />
       <Stars
+        ref={stars2Ref}
         radius={90}
         depth={40}
         count={2000}
-        factor={7}
+        factor={4}
         saturation={0.55}
         fade
         speed={0.15}
@@ -1025,10 +1065,11 @@ function ZodiacConstellation({ ci }: { ci: number }) {
     const base  = getZodiacOpacity(ci, act2p);
     const twinkle = 0.88 + 0.12 * Math.sin(state.clock.elapsedTime * 1.4 + twinklePhase);
 
+    // featured = active trio at a station, or all 12 during finale/post-finale
     let featured = false;
     if (act2p >= ACT2_FINALE_START) {
       featured = true;
-    } else {
+    } else if (act2p >= ACT2_INTRO_END) {
       for (let ei = 0; ei < 4; ei++) {
         if (act2p >= ACT2_ELEMENT_STARTS[ei] && act2p < ACT2_ELEMENT_ENDS[ei]) {
           if (ELEMENT_GROUPS[ACT2_ELEMENTS[ei]].includes(ci)) featured = true;
@@ -1037,20 +1078,42 @@ function ZodiacConstellation({ ci }: { ci: number }) {
       }
     }
 
-    const targetScale = featured ? 4.0 : 2.5;
+    // Pattern scale: intro = all large; featured trio = biggest; rest = medium; exit ramp
+    let targetScale: number;
+    if (act2p <= 0) {
+      targetScale = 1.0;
+    } else if (act2p < ACT2_INTRO_END) {
+      targetScale = 5.5;
+    } else if (act2p >= ACT2_EXIT_START) {
+      const t = (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START);
+      targetScale = ci === ACT2_FLY_CONST
+        ? 6.0 + t * 10.0
+        : Math.max(1.0, 4.5 * (1 - t * 1.2));
+    } else if (featured) {
+      targetScale = 8.5;
+    } else {
+      targetScale = 4.5;
+    }
+
+    // Star sprite sizes in screen pixels (sizeAttenuation=false).
+    // Featured trio: ~80/52 px → unmistakably large glowing stars.
+    // Non-featured:  50/32 px → still clearly bigger than background dust (max ~3px).
+    const targetAnchorPx = featured ? 80 : 50;
+    const targetNormalPx = featured ? 52 : 32;
 
     if (anchorRef.current) {
       const mat = anchorRef.current.material as THREE.PointsMaterial;
       mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle, 5, delta);
+      mat.size    = THREE.MathUtils.damp(mat.size, targetAnchorPx, 4, delta);
     }
     if (normalRef.current) {
       const mat = normalRef.current.material as THREE.PointsMaterial;
       mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle * 0.85, 5, delta);
+      mat.size    = THREE.MathUtils.damp(mat.size, targetNormalPx, 4, delta);
     }
     if (linesRef.current) {
       const mat = linesRef.current.material as THREE.LineBasicMaterial;
-      // Very faint — just enough to see when looking for them
-      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * 0.10, 5, delta);
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * 0.08, 5, delta);
     }
     if (groupRef.current) {
       groupRef.current.scale.setScalar(
@@ -1058,6 +1121,7 @@ function ZodiacConstellation({ ci }: { ci: number }) {
       );
     }
 
+    // Labels only during active element stations and finale — not during intro beat
     const labelTarget = (featured && base > 0.5) ? 1 : 0;
     labelOpacity.current = THREE.MathUtils.damp(labelOpacity.current, labelTarget, 4, delta);
     if (labelEl.current) labelEl.current.style.opacity = String(labelOpacity.current);
@@ -1072,15 +1136,15 @@ function ZodiacConstellation({ ci }: { ci: number }) {
       position={[pos.x, pos.y, pos.z]}
       rotation={[-Math.PI / 2, angleAroundRing, 0]}
     >
-      {/* Anchor star — largest, photographic-spike texture */}
+      {/* Anchor star — sizeAttenuation OFF: fixed screen-space pixels so they always dominate background */}
       <points ref={anchorRef} geometry={anchorGeo}>
-        <pointsMaterial size={6} sizeAttenuation map={getStarTexture()}
+        <pointsMaterial size={50} sizeAttenuation={false} map={getStarTexture()}
           color="#ffffff" transparent opacity={0}
           depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </points>
-      {/* Normal stars — slightly smaller */}
+      {/* Normal stars */}
       <points ref={normalRef} geometry={normalGeo}>
-        <pointsMaterial size={4} sizeAttenuation map={getStarTexture()}
+        <pointsMaterial size={32} sizeAttenuation={false} map={getStarTexture()}
           color="#ffffff" transparent opacity={0}
           depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </points>
@@ -1542,22 +1606,29 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
     if (progress > 0.01 || act2p > 0) {
       computeDesiredCamera(progress);
 
-      // Act 2 camera — one elevated three-quarter view for all stations and finale.
-      // Short smooth transition from pullback (0–0.08), then locked on chart.
+      // Act 2 camera — elevated three-quarter view; exit fly-through toward ACT2_FLY_CONST.
       if (act2p > 0) {
-        if (act2p < 0.08) {
+        if (act2p >= ACT2_EXIT_START) {
+          // Fly from chart cam toward the chosen constellation, then 12 units past it.
+          const exitT  = (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START);
+          const ss     = exitT * exitT * (3 - 2 * exitT);
+          const lavPos = CHART_POSITIONS[ACT2_FLY_CONST];
+          const dist   = CHART_CAM_POS.distanceTo(lavPos);
+          _camFlyDir.subVectors(lavPos, CHART_CAM_POS).normalize();
+          _camDesiredPos.copy(CHART_CAM_POS).addScaledVector(_camFlyDir, ss * (dist + 12));
+          _camDesiredLook.lerpVectors(CHART_CAM_LOOK, lavPos, Math.min(ss * 2, 1));
+        } else if (act2p < 0.08) {
           const ss = (t => t * t * (3 - 2 * t))(act2p / 0.08);
           _camDesiredPos.lerpVectors(PULLBACK_POS, CHART_CAM_POS, ss);
           _camDesiredLook.lerpVectors(_ORIGIN, CHART_CAM_LOOK, ss);
         } else {
           _camDesiredPos.copy(CHART_CAM_POS);
-          // Gentle drift: slow sway of look-at so the chart feels alive
           const sway = Math.sin(state.clock.elapsedTime * 0.06) * 2.5;
           _camDesiredLook.set(sway, CHART_CAM_LOOK.y, 0);
         }
       }
 
-      const lambda = 1.5;
+      const lambda = act2p >= ACT2_EXIT_START ? 5.0 : 1.5;
       camPos.current.x  = THREE.MathUtils.damp(camPos.current.x,  _camDesiredPos.x,  lambda, delta);
       camPos.current.y  = THREE.MathUtils.damp(camPos.current.y,  _camDesiredPos.y,  lambda, delta);
       camPos.current.z  = THREE.MathUtils.damp(camPos.current.z,  _camDesiredPos.z,  lambda, delta);

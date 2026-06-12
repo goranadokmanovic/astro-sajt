@@ -84,7 +84,9 @@ type ZodiacStop = {
   side: Side;
 };
 
-// Act 2 ZODIAC_STOPS — raw progress 0.60–0.975 (400vh).
+// Act 2 ZODIAC_STOPS — timing aligned with SolarSystem.tsx ACT2_ELEMENT_* constants.
+// act2p = (p - 0.6) / 0.4; element stations at act2p [0.1875,0.325) [0.325,0.4625) [0.4625,0.60) [0.60,0.7375)
+// Finale at act2p [0.7375, 0.9375), exit fly-through at act2p >= 0.9375
 const ZODIAC_STOPS: ZodiacStop[] = [
   {
     id: "07",
@@ -93,8 +95,8 @@ const ZODIAC_STOPS: ZodiacStop[] = [
     signs: "Ovan · Lav · Strelac",
     body: "Znaci vatre rađaju vizionare — nesavladiva volja, hrabrost i svrha koja pali sve oko sebe.",
     color: ELEMENT_COLORS.VATRA,
-    start: 0.60,
-    end: 0.675,
+    start: 0.675,
+    end: 0.730,
     side: "left",
   },
   {
@@ -104,8 +106,8 @@ const ZODIAC_STOPS: ZodiacStop[] = [
     signs: "Bik · Devica · Jarac",
     body: "Zemlja gradi careve — strpljenje, posvećenost i majstorstvo koje traje duže od svakog talenta.",
     color: ELEMENT_COLORS.ZEMLJA,
-    start: 0.675,
-    end: 0.75,
+    start: 0.730,
+    end: 0.785,
     side: "right",
   },
   {
@@ -115,8 +117,8 @@ const ZODIAC_STOPS: ZodiacStop[] = [
     signs: "Blizanci · Vaga · Vodolija",
     body: "Vazduh povezuje svetove — razum, dijalog i vizija koja prethodi svakoj promeni.",
     color: ELEMENT_COLORS.VAZDUH,
-    start: 0.75,
-    end: 0.825,
+    start: 0.785,
+    end: 0.840,
     side: "left",
   },
   {
@@ -126,8 +128,8 @@ const ZODIAC_STOPS: ZodiacStop[] = [
     signs: "Rak · Škorpion · Ribe",
     body: "Voda čita duše — intuicija, empatija i emocionalna inteligencija koja vidi iza površine.",
     color: ELEMENT_COLORS.VODA,
-    start: 0.825,
-    end: 0.90,
+    start: 0.840,
+    end: 0.895,
     side: "right",
   },
   {
@@ -137,7 +139,7 @@ const ZODIAC_STOPS: ZodiacStop[] = [
     signs: "Dvanaest svetova, jedan krug.",
     body: "Svaki zodijak je ogledalo — svemir koji piše svoju priču kroz vas. Vaša karta je jedinstvena kao otisak prsta.",
     color: "#d4a843",
-    start: 0.90,
+    start: 0.895,
     end: 0.975,
     side: "left",
   },
@@ -244,8 +246,10 @@ export default function ScrollJourneyHero() {
     offset: ["start start", "end end"],
   });
 
-  // Fade in the background at the very end of Act 2
-  const fadeOpacity = useTransform(scrollYProgress, [0.975, 1.0], [0, 1]);
+  // White flash: peaks at p≈0.985 (camera mid-fly-through), gone by p=0.993
+  const flashOpacity = useTransform(scrollYProgress, [0.975, 0.985, 0.993], [0, 1, 0]);
+  // Background fade starts after the flash dissipates
+  const fadeOpacity = useTransform(scrollYProgress, [0.993, 1.0], [0, 1]);
 
   useMotionValueEvent(scrollYProgress, "change", (p) => {
     // Act 1 3D scene reads this — first 60% of 1000vh maps to 0–1 (same scroll rhythm as original 600vh)
@@ -287,6 +291,12 @@ export default function ScrollJourneyHero() {
             <ZodiacCard key={stop.id} stop={stop} active={activeZodiacIdx === i} />
           ))}
         </div>
+
+        {/* White flash during camera fly-through */}
+        <motion.div
+          className="absolute inset-0 pointer-events-none"
+          style={{ opacity: flashOpacity, backgroundColor: "#fffdf0" }}
+        />
 
         {/* End-of-journey fade to background */}
         <motion.div
