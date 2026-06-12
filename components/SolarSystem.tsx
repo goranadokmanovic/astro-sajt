@@ -186,6 +186,23 @@ const CHART_POSITIONS: THREE.Vector3[] = Array.from({ length: 12 }, (_, i) => {
   return new THREE.Vector3(CHART_RING_R * Math.cos(a), CHART_RING_Y, CHART_RING_R * Math.sin(a));
 });
 
+// Station cameras — low orbital, positioned OPPOSITE the "far" vertex of each trine.
+// Camera sits outside the ring at distance D, just above ring plane (Y=12),
+// looking at the ring centre (0, CHART_RING_Y, 0). The far constellation appears
+// centred in frame; the other two frame the shot left/right.
+const STATION_CAM_D = 85;
+const STATION_CAM_Y = 12;
+// Azimuths: far vertex angle + π  (VATRA i=0 at 0° → cam at 180°, etc.)
+const STATION_CAM_AZIMUTHS = [
+  Math.PI,            // VATRA  (i=0 at   0° → cam at 180°)
+  (7 * Math.PI) / 6, // ZEMLJA (i=1 at  30° → cam at 210°)
+  (4 * Math.PI) / 3, // VAZDUH (i=2 at  60° → cam at 240°)
+  (3 * Math.PI) / 2, // VODA   (i=3 at  90° → cam at 270°)
+] as const;
+const STATION_CAM_POSITIONS: THREE.Vector3[] = STATION_CAM_AZIMUTHS.map(a =>
+  new THREE.Vector3(Math.cos(a) * STATION_CAM_D, STATION_CAM_Y, Math.sin(a) * STATION_CAM_D),
+);
+
 // Act 2 scroll ranges — act2Progress 0→1 over last 400vh of 1000vh.
 // Phase 0: INTRO BEAT — all 12 at full brightness (grand reveal), no labels, no mist.
 // Phases 1–4: element stations — active trio full, others dimmed to 30%.
@@ -683,39 +700,38 @@ function createStarTexture(): THREE.CanvasTexture {
   canvas.width = S; canvas.height = S;
   const ctx = canvas.getContext('2d')!;
 
-  // Outer warm-gold halo
-  const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.46);
-  halo.addColorStop(0,    'rgba(255, 240, 160, 0.55)');
-  halo.addColorStop(0.10, 'rgba(255, 210,  90, 0.32)');
-  halo.addColorStop(0.28, 'rgba(200, 155,  50, 0.11)');
-  halo.addColorStop(0.55, 'rgba(160, 100,  25, 0.03)');
+  // Wide, very faint warm halo — max 0.18 opacity; supports, does not swallow the core
+  const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.50);
+  halo.addColorStop(0,    'rgba(255, 240, 200, 0.18)');
+  halo.addColorStop(0.28, 'rgba(255, 220, 140, 0.07)');
+  halo.addColorStop(0.65, 'rgba(200, 160,  60, 0.02)');
   halo.addColorStop(1,    'rgba(0,   0,    0,  0)');
   ctx.fillStyle = halo;
   ctx.fillRect(0, 0, S, S);
 
-  // Diffraction spikes (+) drawn additively
+  // Diffraction spikes — 4 thin arms, length ~80 % of texture, tapering 1.5 → 0.5 px
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  const spikeLen = S * 0.46;
+  const spikeLen = Math.round(S * 0.40); // 102 px from centre
   for (let d = 1; d <= spikeLen; d++) {
-    const f = Math.pow(1 - d / spikeLen, 2.3);
-    const a = f * 0.78;
-    const w = Math.max(0.8, 1.6 * (1 - (d / spikeLen) * 0.5));
-    ctx.fillStyle = `rgba(255, 248, 215, ${a})`;
-    ctx.fillRect(cx + d - w / 2, cy - 0.8, w, 1.6);
-    ctx.fillRect(cx - d - w / 2, cy - 0.8, w, 1.6);
-    ctx.fillRect(cx - 0.8, cy + d - w / 2, 1.6, w);
-    ctx.fillRect(cx - 0.8, cy - d - w / 2, 1.6, w);
+    const f    = Math.pow(1 - d / spikeLen, 1.8);
+    const a    = f * 0.90;
+    const w    = 0.5 + 1.0 * (1 - d / spikeLen); // 1.5 at base → 0.5 at tip
+    const half = w / 2;
+    ctx.fillStyle = `rgba(255, 252, 235, ${a.toFixed(3)})`;
+    ctx.fillRect(cx + d - half, cy - half, w, w);
+    ctx.fillRect(cx - d - half, cy - half, w, w);
+    ctx.fillRect(cx - half, cy + d - half, w, w);
+    ctx.fillRect(cx - half, cy - d - half, w, w);
   }
   ctx.restore();
 
-  // Cool-white inner core — flat solid disk out to 25% of gradient radius, then soft fade.
-  // Large radius (S*0.35) ensures the bright region is unmistakably bigger than a background dot.
-  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.35);
+  // Tight, intense core — radius ~6 % of texture (S*0.07 ≈ 18 px), steep falloff.
+  // At 80 px rendered size: core ~5.6 px radius, spikes ~32 px arm — pure astrophoto point.
+  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.07);
   core.addColorStop(0,    'rgba(255, 255, 255, 1.0)');
-  core.addColorStop(0.25, 'rgba(255, 255, 255, 1.0)');
-  core.addColorStop(0.50, 'rgba(230, 245, 255, 0.65)');
-  core.addColorStop(0.75, 'rgba(180, 210, 255, 0.22)');
+  core.addColorStop(0.38, 'rgba(255, 255, 255, 1.0)'); // flat solid disk to ~7 px
+  core.addColorStop(0.72, 'rgba(230, 245, 255, 0.55)');
   core.addColorStop(1,    'rgba(0,   0,   0,   0)');
   ctx.fillStyle = core;
   ctx.fillRect(0, 0, S, S);
@@ -806,13 +822,13 @@ function getZodiacOpacity(ci: number, act2p: number): number {
     return ci === ACT2_FLY_CONST ? 1 : Math.max(0, 1 - t * 1.4);
   }
 
-  // POST-FINALE HOLD — all 12 fully lit between finale end and exit start
-  if (act2p >= ACT2_FINALE_END) return 1;
+  // POST-FINALE HOLD — all 12 at 75 % (full brightness reserved for active trine at stations)
+  if (act2p >= ACT2_FINALE_END) return 0.75;
 
-  // FINALE — all 12 fade in together
+  // FINALE — fade in to 75 %
   if (act2p >= ACT2_FINALE_START) {
     const t = (act2p - ACT2_FINALE_START) / (ACT2_FINALE_END - ACT2_FINALE_START);
-    return Math.min(t * 2, 1);
+    return Math.min(t * 2, 1) * 0.75;
   }
 
   // ELEMENT STATIONS — active trio surges to 1.0, other 9 hold at 0.30
@@ -1095,11 +1111,14 @@ function ZodiacConstellation({ ci }: { ci: number }) {
       targetScale = 4.5;
     }
 
-    // Star sprite sizes in screen pixels (sizeAttenuation=false).
-    // Featured trio: ~80/52 px → unmistakably large glowing stars.
-    // Non-featured:  50/32 px → still clearly bigger than background dust (max ~3px).
+    // Anchor is 2× regular — sharp astrophoto hierarchy.
+    // Featured trio: anchor 80 px, normal 40 px. Non-featured: 50/25 px.
     const targetAnchorPx = featured ? 80 : 50;
-    const targetNormalPx = featured ? 52 : 32;
+    const targetNormalPx = featured ? 40 : 25;
+
+    // Lines visible at 0.15 in finale so patterns read as shapes; 0.08 elsewhere.
+    const isFinalePhase = act2p >= ACT2_FINALE_START && act2p < ACT2_EXIT_START;
+    const lineTargetOpacity = base * (isFinalePhase ? 0.20 : 0.08);
 
     if (anchorRef.current) {
       const mat = anchorRef.current.material as THREE.PointsMaterial;
@@ -1113,7 +1132,7 @@ function ZodiacConstellation({ ci }: { ci: number }) {
     }
     if (linesRef.current) {
       const mat = linesRef.current.material as THREE.LineBasicMaterial;
-      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * 0.08, 5, delta);
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, lineTargetOpacity, 5, delta);
     }
     if (groupRef.current) {
       groupRef.current.scale.setScalar(
@@ -1606,10 +1625,10 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
     if (progress > 0.01 || act2p > 0) {
       computeDesiredCamera(progress);
 
-      // Act 2 camera — elevated three-quarter view; exit fly-through toward ACT2_FLY_CONST.
+      // Act 2 camera.
       if (act2p > 0) {
         if (act2p >= ACT2_EXIT_START) {
-          // Fly from chart cam toward the chosen constellation, then 12 units past it.
+          // Exit fly-through toward ACT2_FLY_CONST constellation.
           const exitT  = (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START);
           const ss     = exitT * exitT * (3 - 2 * exitT);
           const lavPos = CHART_POSITIONS[ACT2_FLY_CONST];
@@ -1618,13 +1637,42 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
           _camDesiredPos.copy(CHART_CAM_POS).addScaledVector(_camFlyDir, ss * (dist + 12));
           _camDesiredLook.lerpVectors(CHART_CAM_LOOK, lavPos, Math.min(ss * 2, 1));
         } else if (act2p < 0.08) {
+          // Rise from pullback to overview.
           const ss = (t => t * t * (3 - 2 * t))(act2p / 0.08);
           _camDesiredPos.lerpVectors(PULLBACK_POS, CHART_CAM_POS, ss);
           _camDesiredLook.lerpVectors(_ORIGIN, CHART_CAM_LOOK, ss);
-        } else {
+        } else if (act2p < ACT2_INTRO_END) {
+          // Intro hold — all 12 lit, overview camera.
           _camDesiredPos.copy(CHART_CAM_POS);
-          const sway = Math.sin(state.clock.elapsedTime * 0.06) * 2.5;
+          _camDesiredLook.copy(CHART_CAM_LOOK);
+        } else if (act2p >= ACT2_FINALE_START) {
+          // Rise from last station back to overview for finale.
+          const RISE = 0.06;
+          const ss = Math.min((act2p - ACT2_FINALE_START) / RISE, 1);
+          const sm = ss * ss * (3 - 2 * ss);
+          _camDesiredPos.lerpVectors(STATION_CAM_POSITIONS[3], CHART_CAM_POS, sm);
+          const sway = Math.sin(state.clock.elapsedTime * 0.06) * 2.5 * sm;
           _camDesiredLook.set(sway, CHART_CAM_LOOK.y, 0);
+        } else {
+          // Element station orbital camera.
+          // stationPhase: 0 at start of VATRA, 4 at end of VODA.
+          const stationWidth = ACT2_ELEMENT_ENDS[0] - ACT2_ELEMENT_STARTS[0]; // 0.1375
+          const stationPhase = (act2p - ACT2_INTRO_END) / stationWidth;
+          const ei  = Math.min(Math.floor(stationPhase), 3);
+          const sub = stationPhase - ei; // 0–1 within current station window
+
+          if (ei === 0 && sub < 0.20) {
+            // Descend from overview to first station (first 20 % of VATRA window).
+            const ss = (t => t * t * (3 - 2 * t))(sub / 0.20);
+            _camDesiredPos.lerpVectors(CHART_CAM_POS, STATION_CAM_POSITIONS[0], ss);
+          } else if (sub > 0.75 && ei < 3) {
+            // Orbit to next station (last 25 % of each station window).
+            const ss = (t => t * t * (3 - 2 * t))((sub - 0.75) / 0.25);
+            _camDesiredPos.lerpVectors(STATION_CAM_POSITIONS[ei], STATION_CAM_POSITIONS[ei + 1], ss);
+          } else {
+            _camDesiredPos.copy(STATION_CAM_POSITIONS[Math.min(ei, 3)]);
+          }
+          _camDesiredLook.copy(CHART_CAM_LOOK);
         }
       }
 
