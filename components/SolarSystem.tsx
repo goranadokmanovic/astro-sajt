@@ -1128,9 +1128,8 @@ function ZodiacConstellation({ ci }: { ci: number }) {
     const isIntroPhase  = act2p > 0 && act2p < ACT2_INTRO_END;
     const isFinaleLines = isFinaleAll && act2p < ACT2_EXIT_START;
     let lineTargetOpacity: number;
-    if      (isIntroPhase)   lineTargetOpacity = base * 0.10; // fades in with constellation
-    else if (isActiveTriple) lineTargetOpacity = 0.10;
-    else if (isFinaleLines)  lineTargetOpacity = 0.06;
+    if      (isActiveTriple) lineTargetOpacity = 0.10;
+    else if (isFinaleLines)  lineTargetOpacity = 0.02;
     else                     lineTargetOpacity = 0;
 
     if (anchorRef.current) {
@@ -1154,7 +1153,7 @@ function ZodiacConstellation({ ci }: { ci: number }) {
     }
 
     // Labels: intro, active stations, finale — not inactive constellations at stations.
-    const labelTarget = ((isIntroPhase || featured) && base > 0.4) ? 1 : 0;
+    const labelTarget = ((isIntroPhase || featured) && base > 0.4) ? 0.9 : 0;
     labelOpacity.current = THREE.MathUtils.damp(labelOpacity.current, labelTarget, 4, delta);
     if (labelEl.current) labelEl.current.style.opacity = String(labelOpacity.current);
   });
@@ -1186,15 +1185,15 @@ function ZodiacConstellation({ ci }: { ci: number }) {
             depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
         </lineSegments>
       )}
-      <Html center position={[0, 0, 3.2]} style={{ pointerEvents: 'none', userSelect: 'none' }}>
+      <Html center position={[0, Math.min(...def.stars.map(s => s[1])) * 4.0 - 0.6, 0]} style={{ pointerEvents: 'none', userSelect: 'none' }}>
         <div
           ref={labelEl}
           style={{
             opacity: 0,
             color: '#d4a843',
             fontFamily: 'monospace',
-            fontSize: '9px',
-            letterSpacing: '0.22em',
+            fontSize: '18px',
+            letterSpacing: '0.18em',
             textTransform: 'uppercase',
             whiteSpace: 'nowrap',
           }}
