@@ -246,8 +246,8 @@ export default function ScrollJourneyHero() {
     offset: ["start start", "end end"],
   });
 
-  // White flash: peaks at p≈0.985 (camera mid-fly-through), gone by p=0.993
-  const flashOpacity = useTransform(scrollYProgress, [0.975, 0.985, 0.993], [0, 1, 0]);
+  // Warm amber glow: peaks when camera is deep inside Lav (~exitT 0.6), short and soft
+  const flashOpacity = useTransform(scrollYProgress, [0.985, 0.990, 0.994], [0, 0.85, 0]);
   // Background fade starts after the flash dissipates
   const fadeOpacity = useTransform(scrollYProgress, [0.993, 1.0], [0, 1]);
 
@@ -292,10 +292,13 @@ export default function ScrollJourneyHero() {
           ))}
         </div>
 
-        {/* White flash during camera fly-through */}
+        {/* Warm amber glow during camera fly-through — feels like flying into starlight */}
         <motion.div
           className="absolute inset-0 pointer-events-none"
-          style={{ opacity: flashOpacity, backgroundColor: "#fffdf0" }}
+          style={{
+            opacity: flashOpacity,
+            background: "radial-gradient(ellipse 90% 80% at 50% 42%, #f5d9a0 0%, #d4a843 38%, #c9962e 65%, transparent 88%)",
+          }}
         />
 
         {/* End-of-journey fade to background */}

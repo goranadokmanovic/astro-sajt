@@ -75,6 +75,7 @@ function drawRays(canvas: HTMLCanvasElement) {
 
 export default function EnergyZone() {
   const sectionRef     = useRef<HTMLElement>(null);
+  const starsRef       = useRef<HTMLCanvasElement>(null);
   const particleRef    = useRef<HTMLCanvasElement>(null);
   const raysRef        = useRef<HTMLCanvasElement>(null);
   const particlesStore = useRef<Particle[]>([]);
@@ -85,6 +86,37 @@ export default function EnergyZone() {
     offset: ["start end", "start 22%"],
   });
   const entryOpacity = useTransform(scrollYProgress, [0, 1], [1, 0]);
+
+  // Static star field — drawn once, matches 3D scene sky palette
+  useEffect(() => {
+    const canvas = starsRef.current;
+    if (!canvas) return;
+    const draw = () => {
+      canvas.width  = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+      for (let i = 0; i < 280; i++) {
+        const x = Math.random() * W;
+        const y = Math.random() * H;
+        const r = 0.4 + Math.random() * 1.2;
+        const a = 0.12 + Math.random() * 0.46;
+        const cr = Math.round(210 + Math.random() * 45);
+        const cg = Math.round(210 + Math.random() * 40);
+        const cb = Math.round(220 + Math.random() * 35);
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a.toFixed(2)})`;
+        ctx.fill();
+      }
+    };
+    draw();
+    const ro = new ResizeObserver(draw);
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, []);
 
   // Draw rays (static, redrawn on resize)
   useEffect(() => {
@@ -168,6 +200,14 @@ export default function EnergyZone() {
         className="relative min-h-screen overflow-hidden"
         style={{ background: "#0a0612" }}
       >
+        {/* Star field — background stars, sky continues from 3D scene */}
+        <canvas
+          ref={starsRef}
+          aria-hidden
+          className="absolute inset-0 pointer-events-none"
+          style={{ width: "100%", height: "100%" }}
+        />
+
         {/* Amber mist — soft radial around figure */}
         <div
           aria-hidden
@@ -194,7 +234,7 @@ export default function EnergyZone() {
             width: "52vw",
             height: "52vh",
             background:
-              "radial-gradient(ellipse at 100% 0%, rgba(255,255,224,0.92) 0%, rgba(255,242,168,0.58) 9%, rgba(255,224,104,0.24) 24%, rgba(210,160,56,0.08) 48%, transparent 68%)",
+              "radial-gradient(ellipse at 100% 0%, rgba(240,222,172,0.62) 0%, rgba(228,200,128,0.36) 10%, rgba(210,168,80,0.16) 26%, rgba(180,130,48,0.05) 50%, transparent 68%)",
           }}
         />
         {/* Sun pulse */}
@@ -205,7 +245,7 @@ export default function EnergyZone() {
             width: "38vw",
             height: "38vh",
             background:
-              "radial-gradient(ellipse at 100% 0%, rgba(255,252,210,0.48) 0%, rgba(255,235,140,0.18) 16%, transparent 44%)",
+              "radial-gradient(ellipse at 100% 0%, rgba(235,210,155,0.34) 0%, rgba(215,185,110,0.12) 18%, transparent 44%)",
           }}
           animate={{ opacity: [0.55, 1, 0.55] }}
           transition={{ duration: 4.2, repeat: Infinity, ease: "easeInOut" }}
@@ -225,7 +265,11 @@ export default function EnergyZone() {
           <motion.div
             animate={{ scale: [1, 1.022, 1] }}
             transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
-            style={{ display: "inline-block" }}
+            style={{
+              display: "inline-block",
+              maskImage: "radial-gradient(ellipse 78% 84% at 50% 44%, black 26%, transparent 74%)",
+              WebkitMaskImage: "radial-gradient(ellipse 78% 84% at 50% 44%, black 26%, transparent 74%)",
+            }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -262,10 +306,7 @@ export default function EnergyZone() {
       {/* ── Placeholder section ─────────────────────────────────────────── */}
       <section
         className="min-h-[38vh] flex items-center justify-center"
-        style={{
-          background: "#080810",
-          borderTop: "1px solid rgba(212,168,67,0.12)",
-        }}
+        style={{ background: "#0a0612" }}
       >
         <p className="font-mono text-[9px] tracking-[0.36em] uppercase opacity-25 text-accent">
           Usluge · uskoro

@@ -177,7 +177,7 @@ const PULLBACK_POS    = new THREE.Vector3( 0,    4.0,  22.0); // matches opening
 const CHART_RING_R  = 35;  // outside Neptune (15.2) — zodiac ring radius
 const CHART_RING_Y  = 2;   // near ecliptic plane, slight elevation
 
-const CHART_CAM_POS  = new THREE.Vector3(0, 50, 75); // elevated three-quarter view — pulled back to keep full ring in frame
+const CHART_CAM_POS  = new THREE.Vector3(0, 55, 88); // elevated three-quarter view — pulled back to keep full ring in frame
 const CHART_CAM_LOOK = new THREE.Vector3(0,  2,  0); // look near-ecliptic origin
 
 // 12 world positions for constellations on the chart ring (Aries offset, clockwise)
@@ -1646,14 +1646,13 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
       // Act 2 camera.
       if (act2p > 0) {
         if (act2p >= ACT2_EXIT_START) {
-          // Exit fly-through toward ACT2_FLY_CONST constellation.
+          // Direct linear fly-through — camera moves toward Lav immediately, no dead beat.
           const exitT  = (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START);
-          const ss     = exitT * exitT * (3 - 2 * exitT);
           const lavPos = CHART_POSITIONS[ACT2_FLY_CONST];
           const dist   = CHART_CAM_POS.distanceTo(lavPos);
           _camFlyDir.subVectors(lavPos, CHART_CAM_POS).normalize();
-          _camDesiredPos.copy(CHART_CAM_POS).addScaledVector(_camFlyDir, ss * (dist + 40));
-          _camDesiredLook.lerpVectors(CHART_CAM_LOOK, lavPos, Math.min(ss * 2, 1));
+          _camDesiredPos.copy(CHART_CAM_POS).addScaledVector(_camFlyDir, exitT * (dist + 40));
+          _camDesiredLook.copy(lavPos);
         } else if (act2p < 0.08) {
           // Rise from pullback to overview.
           const ss = (t => t * t * (3 - 2 * t))(act2p / 0.08);
@@ -1670,7 +1669,7 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
           const sm = ss * ss * (3 - 2 * ss);
           _camDesiredPos.lerpVectors(STATION_CAM_POSITIONS[3], CHART_CAM_POS, sm);
           const sway = Math.sin(state.clock.elapsedTime * 0.06) * 2.5 * sm;
-          _camDesiredLook.set(sway, CHART_CAM_LOOK.y, 0);
+          _camDesiredLook.set(sway, -3, 0); // tilt down to give labels room at bottom of frame
         } else {
           // Element station orbital camera.
           // stationPhase: 0 at start of VATRA, 4 at end of VODA.
@@ -1694,7 +1693,7 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
         }
       }
 
-      const lambda = act2p >= ACT2_EXIT_START ? 5.0 : 1.5;
+      const lambda = act2p >= ACT2_EXIT_START ? 8.0 : 1.5;
       camPos.current.x  = THREE.MathUtils.damp(camPos.current.x,  _camDesiredPos.x,  lambda, delta);
       camPos.current.y  = THREE.MathUtils.damp(camPos.current.y,  _camDesiredPos.y,  lambda, delta);
       camPos.current.z  = THREE.MathUtils.damp(camPos.current.z,  _camDesiredPos.z,  lambda, delta);
