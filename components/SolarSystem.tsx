@@ -1324,6 +1324,7 @@ function EnergyFigureScene({ texture }: { texture: THREE.Texture }) {
   const titleRef  = useRef<THREE.Mesh>(null);
   const subRef    = useRef<THREE.Mesh>(null);
   const opRef     = useRef(0);
+  const scaleRef  = useRef(0.05);
 
   useFrame(({ camera }, delta) => {
     if (!groupRef.current) return;
@@ -1331,15 +1332,29 @@ function EnergyFigureScene({ texture }: { texture: THREE.Texture }) {
     const exitT = act2p >= ACT2_EXIT_START
       ? (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START)
       : 0;
-    const target = exitT <= 0
-      ? 0
-      : THREE.MathUtils.smoothstep(exitT, 0.18, 0.42) *
-        (1 - THREE.MathUtils.smoothstep(exitT, 0.92, 1.0));
 
-    opRef.current = THREE.MathUtils.damp(opRef.current, target, 5, delta);
+    // Only appear AFTER camera fully exits Leo — no early appearance during ring phase
+    const APPEAR = 0.62; // just after camera passes through Leo
+    const FULL   = 0.78; // fully grown
+    const FADE   = 0.92; // HTML overlays take over from here
+
+    const target = exitT < APPEAR
+      ? 0
+      : THREE.MathUtils.smoothstep(exitT, APPEAR, FULL) *
+        (1 - THREE.MathUtils.smoothstep(exitT, FADE, 1.0));
+
+    // Grow from a star-point (0.05) to full figure (1.0) as camera approaches
+    const targetScale = exitT < APPEAR
+      ? 0.05
+      : 0.05 + THREE.MathUtils.smoothstep(exitT, APPEAR, FULL) * 0.95;
+
+    opRef.current    = THREE.MathUtils.damp(opRef.current,    target,      6, delta);
+    scaleRef.current = THREE.MathUtils.damp(scaleRef.current, targetScale, 6, delta);
+
     if (figMatRef.current) figMatRef.current.opacity = opRef.current;
-    if (titleRef.current) (titleRef.current as any).fillOpacity = opRef.current;
-    if (subRef.current) (subRef.current as any).fillOpacity = opRef.current;
+    if (titleRef.current)  (titleRef.current  as any).fillOpacity = opRef.current;
+    if (subRef.current)    (subRef.current    as any).fillOpacity = opRef.current;
+    groupRef.current.scale.setScalar(scaleRef.current);
     groupRef.current.quaternion.copy(camera.quaternion);
   });
 
@@ -1349,22 +1364,22 @@ function EnergyFigureScene({ texture }: { texture: THREE.Texture }) {
       position={[ACT2_FIGURE_POS.x, ACT2_FIGURE_POS.y, ACT2_FIGURE_POS.z]}
       frustumCulled={false}
     >
-      {/* Billboard figure — alphaTest discards dark PNG background pixels */}
+      {/* Additive blending: dark PNG background adds 0 → invisible; golden glow adds its color */}
       <mesh renderOrder={1}>
         <planeGeometry args={[34, 46]} />
         <meshBasicMaterial
           ref={figMatRef}
           map={texture}
           transparent
-          alphaTest={0.01}
+          alphaTest={0.05}
           opacity={0}
           depthWrite={false}
-          depthTest
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
           toneMapped={false}
         />
       </mesh>
 
-      {/* 3D text — positioned below the figure in billboard local space */}
       <Text
         ref={titleRef as any}
         position={[0, -24.5, 0.5]}
@@ -1372,6 +1387,7 @@ function EnergyFigureScene({ texture }: { texture: THREE.Texture }) {
         color="#e8d5a8"
         anchorX="center"
         anchorY="top"
+        outlineWidth={0}
         fillOpacity={0}
         renderOrder={2}
       >
@@ -1385,6 +1401,7 @@ function EnergyFigureScene({ texture }: { texture: THREE.Texture }) {
         anchorX="center"
         anchorY="top"
         letterSpacing={0.28}
+        outlineWidth={0}
         fillOpacity={0}
         renderOrder={2}
       >
