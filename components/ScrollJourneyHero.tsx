@@ -246,14 +246,13 @@ export default function ScrollJourneyHero() {
     offset: ["start start", "end end"],
   });
 
-  // Warm amber glow: peaks when camera is deep inside Lav (~exitT 0.6), short and soft
-  const flashOpacity = useTransform(scrollYProgress, [0.985, 0.990, 0.994], [0, 0.85, 0]);
-  // Background fade: starts when exit fly begins, complete before EnergyZone boundary shows
-  const fadeOpacity  = useTransform(scrollYProgress, [0.975, 0.985], [0, 1]);
-  // Progress strip: fades out as the finale completes, gone before the section boundary
-  const progressOpacity = useTransform(scrollYProgress, [0.87, 0.93], [1, 0]);
+  // Warm amber glow — rises slowly as camera approaches figure, peaks just past Lav
+  const flashOpacity = useTransform(scrollYProgress, [0.978, 0.988, 0.995], [0, 1.0, 0]);
+  // Dark fade: only kicks in after the warp, seals the gap before the section slides off
+  const fadeOpacity  = useTransform(scrollYProgress, [0.990, 0.997], [0, 1]);
 
   useMotionValueEvent(scrollYProgress, "change", (p) => {
+    if (typeof window !== "undefined") (window as any).__syp = p; // eslint-disable-line
     // Act 1 3D scene reads this — first 60% of 1000vh maps to 0–1 (same scroll rhythm as original 600vh)
     scrollState.progress = Math.min(p / 0.6, 1.0);
     // Act 2 3D scene reads this — last 40% of 1000vh maps to 0–1
@@ -294,10 +293,10 @@ export default function ScrollJourneyHero() {
           ))}
         </div>
 
-        {/* End-of-journey fade to background — z-20 covers the progress strip (z-10) */}
+        {/* End-of-journey fade — must match EZ background to eliminate seam */}
         <motion.div
-          className="absolute inset-0 bg-background pointer-events-none"
-          style={{ opacity: fadeOpacity, zIndex: 20 }}
+          className="absolute inset-0 pointer-events-none"
+          style={{ opacity: fadeOpacity, zIndex: 20, background: "#0a0a14" }}
         />
 
         {/* Warm amber glow during camera fly-through — above the dark fade */}
@@ -310,21 +309,6 @@ export default function ScrollJourneyHero() {
           }}
         />
 
-        {/* Progress strip — fades out before section boundary becomes visible */}
-        <motion.div
-          className="absolute bottom-6 left-6 right-6 flex items-center gap-4 pointer-events-none z-10"
-          style={{ opacity: progressOpacity }}
-        >
-          <span className="font-mono text-[9px] tracking-[0.32em] text-accent/50 uppercase shrink-0">
-            Putovanje
-          </span>
-          <div className="relative flex-1 h-px bg-white/10 overflow-hidden">
-            <motion.div
-              className="absolute inset-y-0 left-0 right-0 bg-accent"
-              style={{ scaleX: scrollYProgress, transformOrigin: "left" }}
-            />
-          </div>
-        </motion.div>
       </div>
     </section>
   );

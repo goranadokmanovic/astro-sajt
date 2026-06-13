@@ -8,13 +8,11 @@ interface Particle {
   vx: number; vy: number;
   life: number; maxLife: number;
   size: number; r: number; g: number; b: number;
-  isRayDrift: boolean;
 }
 
 function spawnParticle(W: number, H: number): Particle {
-  const isRayDrift = Math.random() < 0.28;
-  const x = isRayDrift ? W * (0.4 + Math.random() * 0.6) : Math.random() * W;
-  const y = isRayDrift ? Math.random() * H * 0.5 : Math.random() * H;
+  const x = Math.random() * W;
+  const y = Math.random() * H;
   const PALETTE = [
     [212, 168, 67],
     [192, 128, 48],
@@ -24,59 +22,21 @@ function spawnParticle(W: number, H: number): Particle {
   const [r, g, b] = PALETTE[Math.floor(Math.random() * PALETTE.length)];
   return {
     x, y,
-    vx: isRayDrift ? -(0.18 + Math.random() * 0.22) : (Math.random() - 0.5) * 0.12,
-    vy: isRayDrift ? (0.15 + Math.random() * 0.18) : -(0.18 + Math.random() * 0.22),
+    vx: (Math.random() - 0.5) * 0.12,
+    vy: -(0.18 + Math.random() * 0.22),
     life: Math.random() * 180,
     maxLife: 140 + Math.random() * 160,
     size: 0.8 + Math.random() * 1.8,
     r, g, b,
-    isRayDrift,
   };
-}
-
-function drawRays(canvas: HTMLCanvasElement) {
-  const W = canvas.width;
-  const H = canvas.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  ctx.clearRect(0, 0, W, H);
-
-  const RAYS = [
-    { dx: -0.97, dy: 0.24, opacity: 0.06, w: 5 },
-    { dx: -0.92, dy: 0.39, opacity: 0.09, w: 12 },
-    { dx: -0.85, dy: 0.53, opacity: 0.11, w: 20 },
-    { dx: -0.75, dy: 0.66, opacity: 0.08, w: 12 },
-    { dx: -0.62, dy: 0.78, opacity: 0.06, w: 7 },
-    { dx: -0.45, dy: 0.89, opacity: 0.04, w: 4 },
-  ];
-
-  const len = Math.hypot(W, H) * 1.5;
-  const ox = W, oy = 0;
-
-  RAYS.forEach(({ dx, dy, opacity, w }) => {
-    const ex = ox + dx * len;
-    const ey = oy + dy * len;
-    const grad = ctx.createLinearGradient(ox, oy, ex, ey);
-    grad.addColorStop(0,    `rgba(255, 248, 200, ${opacity})`);
-    grad.addColorStop(0.18, `rgba(255, 235, 160, ${opacity * 0.75})`);
-    grad.addColorStop(0.5,  `rgba(255, 210, 110, ${opacity * 0.28})`);
-    grad.addColorStop(1,    "rgba(255, 190, 60, 0)");
-    ctx.lineWidth = w;
-    ctx.strokeStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(ox, oy);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
-  });
 }
 
 export default function EnergyZone() {
   const starsRef       = useRef<HTMLCanvasElement>(null);
   const particleRef    = useRef<HTMLCanvasElement>(null);
-  const raysRef        = useRef<HTMLCanvasElement>(null);
   const particlesStore = useRef<Particle[]>([]);
 
-  // Static star field
+  // Star field — same density/color profile as the 3D CosmicBackdrop for sky continuity
   useEffect(() => {
     const canvas = starsRef.current;
     if (!canvas) return;
@@ -87,34 +47,28 @@ export default function EnergyZone() {
       if (!ctx) return;
       const W = canvas.width, H = canvas.height;
       ctx.clearRect(0, 0, W, H);
-      for (let i = 0; i < 280; i++) {
+      // ~400 stars: mostly white-blue with slight saturation variance (matches Stars factor=3-4)
+      const count = Math.round((W * H) / 3200);
+      for (let i = 0; i < count; i++) {
         const x = Math.random() * W;
         const y = Math.random() * H;
-        const r = 0.4 + Math.random() * 1.2;
-        const a = 0.10 + Math.random() * 0.42;
-        const cr = Math.round(210 + Math.random() * 45);
-        const cg = Math.round(210 + Math.random() * 40);
-        const cb = Math.round(220 + Math.random() * 35);
+        const r = 0.35 + Math.random() * 1.15;
+        const a = 0.06 + Math.random() * 0.39; // capped ~0.45 to match 3D mat.opacity=0.45
+        // slight hue variation: 85% cool-white, 10% blue-tinted, 5% warm-tinted
+        const roll = Math.random();
+        let cr: number, cg: number, cb: number;
+        if (roll < 0.05) {
+          cr = Math.round(240 + Math.random() * 15); cg = Math.round(225 + Math.random() * 20); cb = Math.round(205 + Math.random() * 20);
+        } else if (roll < 0.15) {
+          cr = Math.round(205 + Math.random() * 25); cg = Math.round(215 + Math.random() * 25); cb = Math.round(240 + Math.random() * 15);
+        } else {
+          cr = Math.round(218 + Math.random() * 37); cg = Math.round(218 + Math.random() * 32); cb = Math.round(222 + Math.random() * 33);
+        }
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${cr},${cg},${cb},${a.toFixed(2)})`;
         ctx.fill();
       }
-    };
-    draw();
-    const ro = new ResizeObserver(draw);
-    ro.observe(canvas);
-    return () => ro.disconnect();
-  }, []);
-
-  // Draw rays
-  useEffect(() => {
-    const canvas = raysRef.current;
-    if (!canvas) return;
-    const draw = () => {
-      canvas.width  = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
-      drawRays(canvas);
     };
     draw();
     const ro = new ResizeObserver(draw);
@@ -186,7 +140,7 @@ export default function EnergyZone() {
       {/* ── Hero viewport ───────────────────────────────────────────────── */}
       <section
         className="relative min-h-screen"
-        style={{ background: "#0a0612" }}
+        style={{ background: "#0a0a14" }}
       >
         {/* Star field */}
         <canvas
@@ -235,14 +189,6 @@ export default function EnergyZone() {
           transition={{ duration: 4.2, repeat: Infinity, ease: "easeInOut" }}
         />
 
-        {/* Rays — full-section canvas, no box edge */}
-        <canvas
-          ref={raysRef}
-          aria-hidden
-          className="absolute inset-0 pointer-events-none"
-          style={{ width: "100%", height: "100%", filter: "blur(3px)", opacity: 0.70 }}
-        />
-
         {/* Central content */}
         <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 text-center">
           {/* Figure with breathing animation — mask dissolves PNG edges before vignette takes over */}
@@ -251,8 +197,8 @@ export default function EnergyZone() {
             transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
             style={{
               display: "inline-block",
-              maskImage: "radial-gradient(ellipse 78% 84% at 50% 44%, black 26%, transparent 74%)",
-              WebkitMaskImage: "radial-gradient(ellipse 78% 84% at 50% 44%, black 26%, transparent 74%)",
+              maskImage: "radial-gradient(ellipse 70% 70% at center, black 40%, transparent 75%)",
+              WebkitMaskImage: "radial-gradient(ellipse 70% 70% at center, black 40%, transparent 75%)",
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -279,7 +225,7 @@ export default function EnergyZone() {
           </div>
         </div>
 
-        {/* Section-wide vignette — dissolves figure edges AND section top/bottom into #0a0612 */}
+        {/* Section-wide vignette — dissolves figure edges AND section top/bottom into #0a0a14 */}
         <div
           aria-hidden
           className="absolute inset-0 pointer-events-none"
@@ -288,9 +234,9 @@ export default function EnergyZone() {
             background: `
               radial-gradient(ellipse 55% 60% at 50% 44%,
                 transparent 28%,
-                rgba(10,6,18,0.38) 52%,
-                rgba(10,6,18,0.78) 68%,
-                #0a0612 84%)
+                rgba(10,10,20,0.38) 52%,
+                rgba(10,10,20,0.78) 68%,
+                #0a0a14 84%)
             `,
           }}
         />
@@ -299,7 +245,7 @@ export default function EnergyZone() {
       {/* ── Placeholder section ─────────────────────────────────────────── */}
       <section
         className="min-h-[38vh] flex items-center justify-center"
-        style={{ background: "#0a0612" }}
+        style={{ background: "#0a0a14" }}
       >
         <p className="font-mono text-[9px] tracking-[0.36em] uppercase opacity-25 text-accent">
           Usluge · uskoro

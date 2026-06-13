@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { scrollState, planetPositions } from "@/lib/scrollState";
 import { CONSTELLATIONS, ELEMENT_GROUPS } from "@/lib/zodiac";
 
-const BACKGROUND = "#0a0612";
+const BACKGROUND = "#0a0a14";
 const BASE_TILT = (25 * Math.PI) / 180;
 const MAX_PARALLAX = 0.05;
 const PARALLAX_GAIN = MAX_PARALLAX * 2;
@@ -213,7 +213,7 @@ const ACT2_ELEMENT_STARTS = [0.1875, 0.325, 0.4625, 0.60] as const;
 const ACT2_ELEMENT_ENDS   = [0.325, 0.4625, 0.60, 0.7375] as const;
 const ACT2_FINALE_START   = 0.7375;
 const ACT2_FINALE_END     = 0.8875;
-const ACT2_EXIT_START     = 0.9375;   // camera fly-through begins
+const ACT2_EXIT_START     = ACT2_FINALE_END; // fly-through starts immediately after finale — no hold beat
 const ACT2_FLY_CONST      = 4;        // Lav — constellation index to fly through (0–11)
 const ACT2_ELEMENTS       = ['VATRA', 'ZEMLJA', 'VAZDUH', 'VODA'] as const;
 const _ORIGIN             = new THREE.Vector3(0, 0, 0);
@@ -816,10 +816,10 @@ function getZodiacOpacity(ci: number, act2p: number): number {
     return Math.min(act2p / (ACT2_INTRO_END * 0.35), 1);
   }
 
-  // EXIT FLY-THROUGH — fly-through target stays lit, others fade out
+  // EXIT FLY-THROUGH — Lav stays full, rest vanish fast (no lingering zodiac ring)
   if (act2p >= ACT2_EXIT_START) {
     const t = (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START);
-    return ci === ACT2_FLY_CONST ? 1 : Math.max(0, 1 - t * 1.4);
+    return ci === ACT2_FLY_CONST ? 1 : Math.max(0, 1 - t * 5.0);
   }
 
   // POST-FINALE HOLD — all 12 at 75 % (full brightness reserved for active trine at stations)
@@ -1119,11 +1119,12 @@ function ZodiacConstellation({ ci }: { ci: number }) {
     const finaleGlowMult = isFinaleAll ? 0.85 : 1.0;
     let targetAnchorPx = isFinaleAll ? 68 : (isActiveTriple ? 80 : 50);
     let targetNormalPx = isFinaleAll ? 34 : (isActiveTriple ? 40 : 25);
-    // Fly-through: the target constellation's stars swell in pixel size as camera approaches.
+    // Fly-through: Lav stars swell dramatically — quadratic ease-in for warp feel.
     if (act2p >= ACT2_EXIT_START && ci === ACT2_FLY_CONST) {
       const exitT = (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START);
-      targetAnchorPx = 68 + exitT * 140; // 68 → 208 px
-      targetNormalPx = 34 + exitT * 90;  // 34 → 124 px
+      const swell = exitT * exitT; // quadratic — slow build then rush
+      targetAnchorPx = 68 + swell * 260; // 68 → 328 px
+      targetNormalPx = 34 + swell * 150;  // 34 → 184 px
     }
 
     // Line opacity: focus-only logic.
@@ -1191,7 +1192,7 @@ function ZodiacConstellation({ ci }: { ci: number }) {
             depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
         </lineSegments>
       )}
-      <Html center position={[0, Math.min(...def.stars.map(s => s[1])) * 4.0 - 0.6, 0]} style={{ pointerEvents: 'none', userSelect: 'none' }}>
+      <Html center zIndexRange={[0, 0]} position={[0, Math.min(...def.stars.map(s => s[1])) * 4.0 - 0.6, 0]} style={{ pointerEvents: 'none', userSelect: 'none' }}>
         <div
           ref={labelEl}
           style={{
@@ -1646,13 +1647,21 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
       // Act 2 camera.
       if (act2p > 0) {
         if (act2p >= ACT2_EXIT_START) {
-          // Direct linear fly-through — camera moves toward Lav immediately, no dead beat.
+          // Warp fly-through: cubic ease-in accelerates toward Lav, then eases out into figure.
+          // Camera always looks ahead along the flight axis — no "show Lav again" beat.
           const exitT  = (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START);
           const lavPos = CHART_POSITIONS[ACT2_FLY_CONST];
           const dist   = CHART_CAM_POS.distanceTo(lavPos);
           _camFlyDir.subVectors(lavPos, CHART_CAM_POS).normalize();
-          _camDesiredPos.copy(CHART_CAM_POS).addScaledVector(_camFlyDir, exitT * (dist + 40));
-          _camDesiredLook.copy(lavPos);
+          // Asymmetric ease-in-out: cubic ease-in to t=0.6, quadratic ease-out to t=1.0
+          const MID = 0.6;
+          const warpT = exitT < MID
+            ? Math.pow(exitT / MID, 3) * MID
+            : MID + (1 - MID) * (1 - Math.pow(1 - (exitT - MID) / (1 - MID), 2));
+          const flightDist = warpT * (dist + 55);
+          _camDesiredPos.copy(CHART_CAM_POS).addScaledVector(_camFlyDir, flightDist);
+          // Always look 18 units ahead — tunnel vision, figure in the distance
+          _camDesiredLook.copy(CHART_CAM_POS).addScaledVector(_camFlyDir, flightDist + 18);
         } else if (act2p < 0.08) {
           // Rise from pullback to overview.
           const ss = (t => t * t * (3 - 2 * t))(act2p / 0.08);
