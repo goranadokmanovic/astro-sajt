@@ -4,7 +4,6 @@ import { useRef, useState } from "react";
 import {
   useScroll,
   useMotionValueEvent,
-  useTransform,
   motion,
 } from "framer-motion";
 import { scrollState } from "@/lib/scrollState";
@@ -246,11 +245,6 @@ export default function ScrollJourneyHero() {
     offset: ["start start", "end end"],
   });
 
-  // Warm amber glow — rises slowly as camera approaches figure, peaks just past Lav
-  const flashOpacity = useTransform(scrollYProgress, [0.978, 0.988, 0.995], [0, 1.0, 0]);
-  // Dark fade: only kicks in after the warp, seals the gap before the section slides off
-  const fadeOpacity  = useTransform(scrollYProgress, [0.990, 0.997], [0, 1]);
-
   useMotionValueEvent(scrollYProgress, "change", (p) => {
     if (typeof window !== "undefined") (window as any).__syp = p; // eslint-disable-line
     // Act 1 3D scene reads this — first 60% of 1000vh maps to 0–1 (same scroll rhythm as original 600vh)
@@ -278,8 +272,8 @@ export default function ScrollJourneyHero() {
   });
 
   return (
-    <section id="hero" ref={sectionRef} className="relative h-[1000vh]">
-      <div className="sticky top-0 h-screen relative">
+    <section id="hero" ref={sectionRef} className="relative h-[1000vh] bg-[#0a0a14]">
+      <div className="sticky top-0 h-screen relative bg-[#0a0a14]">
         {/* 3D canvas */}
         <SolarSystemLoader />
 
@@ -292,22 +286,6 @@ export default function ScrollJourneyHero() {
             <ZodiacCard key={stop.id} stop={stop} active={activeZodiacIdx === i} />
           ))}
         </div>
-
-        {/* End-of-journey fade — must match EZ background to eliminate seam */}
-        <motion.div
-          className="absolute inset-0 pointer-events-none"
-          style={{ opacity: fadeOpacity, zIndex: 20, background: "#0a0a14" }}
-        />
-
-        {/* Warm amber glow during camera fly-through — above the dark fade */}
-        <motion.div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            opacity: flashOpacity,
-            zIndex: 30,
-            background: "radial-gradient(ellipse 90% 80% at 50% 42%, #f5d9a0 0%, #d4a843 38%, #c9962e 65%, transparent 88%)",
-          }}
-        />
 
       </div>
     </section>

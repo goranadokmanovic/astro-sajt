@@ -27,6 +27,7 @@ const TEXTURE_PATHS = {
   saturn: "/textures/planets/saturn.jpg",
   uranus: "/textures/planets/uranus.jpg",
   neptune: "/textures/planets/neptune.jpg",
+  energyFigure: "/images/energy-figure.png",
 } as const;
 
 const AMBIENT_INTENSITY = 0.55; // Purple fill only; keep bloom reserved for the sun.
@@ -217,6 +218,14 @@ const ACT2_EXIT_START     = ACT2_FINALE_END; // fly-through starts immediately a
 const ACT2_FLY_CONST      = 4;        // Lav — constellation index to fly through (0–11)
 const ACT2_ELEMENTS       = ['VATRA', 'ZEMLJA', 'VAZDUH', 'VODA'] as const;
 const _ORIGIN             = new THREE.Vector3(0, 0, 0);
+const _ACT2_FLY_DIR       = new THREE.Vector3()
+  .subVectors(CHART_POSITIONS[ACT2_FLY_CONST], CHART_CAM_POS)
+  .normalize();
+const ACT2_FLY_BASE_DIST  = CHART_CAM_POS.distanceTo(CHART_POSITIONS[ACT2_FLY_CONST]);
+const ACT2_FIGURE_DIST    = ACT2_FLY_BASE_DIST + 108;
+const ACT2_FIGURE_POS     = new THREE.Vector3()
+  .copy(CHART_CAM_POS)
+  .addScaledVector(_ACT2_FLY_DIR, ACT2_FIGURE_DIST);
 
 // Torus ring at chart level for finale — hairline, very subtle
 const _chartRingGeo = new THREE.TorusGeometry(CHART_RING_R, 0.035, 8, 128);
@@ -1293,7 +1302,7 @@ function ZodiacCircle() {
     if (!meshRef.current) return;
     const act2p = scrollState.act2Progress;
     const mat   = meshRef.current.material as THREE.MeshBasicMaterial;
-    if (act2p >= ACT2_FINALE_START && act2p < ACT2_FINALE_END) {
+    if (act2p >= ACT2_FINALE_START && act2p < ACT2_EXIT_START) {
       const t  = (act2p - ACT2_FINALE_START) / (ACT2_FINALE_END - ACT2_FINALE_START);
       const ss = t * t * (3 - 2 * t);
       mat.opacity = THREE.MathUtils.damp(mat.opacity, ss * 0.15, 3, delta);
@@ -1309,7 +1318,48 @@ function ZodiacCircle() {
   );
 }
 
-function ZodiacChart() {
+function EnergyFigurePlane({ texture }: { texture: THREE.Texture }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const opacityRef = useRef(0);
+
+  useFrame(({ camera }, delta) => {
+    if (!meshRef.current) return;
+    const act2p = scrollState.act2Progress;
+    const exitT = act2p >= ACT2_EXIT_START
+      ? (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START)
+      : 0;
+    const targetOpacity = exitT <= 0
+      ? 0
+      : THREE.MathUtils.smoothstep(exitT, 0.18, 0.42) *
+        (1 - THREE.MathUtils.smoothstep(exitT, 0.92, 1.0));
+
+    opacityRef.current = THREE.MathUtils.damp(opacityRef.current, targetOpacity, 5, delta);
+    (meshRef.current.material as THREE.MeshBasicMaterial).opacity = opacityRef.current;
+    meshRef.current.quaternion.copy(camera.quaternion);
+  });
+
+  return (
+    <mesh
+      ref={meshRef}
+      position={[ACT2_FIGURE_POS.x, ACT2_FIGURE_POS.y, ACT2_FIGURE_POS.z]}
+      renderOrder={1}
+      frustumCulled={false}
+    >
+      <planeGeometry args={[34, 46]} />
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        opacity={0}
+        depthWrite={false}
+        depthTest
+        blending={THREE.NormalBlending}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+}
+
+function ZodiacChart({ energyFigureTexture }: { energyFigureTexture: THREE.Texture }) {
   return (
     <group>
       {CONSTELLATIONS.map((_, ci) => (
@@ -1317,6 +1367,7 @@ function ZodiacChart() {
       ))}
       <TrineNebula />
       <ZodiacCircle />
+      <EnergyFigurePlane texture={energyFigureTexture} />
     </group>
   );
 }
@@ -1773,7 +1824,7 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
         ))}
       </group>
 
-      <ZodiacChart />
+      <ZodiacChart energyFigureTexture={textures.energyFigure} />
 
       <EffectComposer multisampling={0}>
         <Bloom intensity={0.7} luminanceThreshold={0.85} mipmapBlur />
