@@ -1318,13 +1318,39 @@ function ZodiacCircle() {
   );
 }
 
+// Luminance-based transparency: dark cosmic background → transparent,
+// golden atmospheric glow → fully visible. Preserves rays and mist.
+const FIGURE_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const FIGURE_FRAG = /* glsl */`
+  uniform sampler2D map;
+  uniform float uOpacity;
+  varying vec2 vUv;
+  void main() {
+    vec4 c = texture2D(map, vUv);
+    float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+    float alpha = pow(lum, 0.8) * uOpacity;
+    gl_FragColor = vec4(c.rgb, alpha);
+  }
+`;
+
 function EnergyFigureScene({ texture }: { texture: THREE.Texture }) {
   const groupRef  = useRef<THREE.Group>(null);
-  const figMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const figMatRef = useRef<THREE.ShaderMaterial>(null);
   const titleRef  = useRef<THREE.Mesh>(null);
   const subRef    = useRef<THREE.Mesh>(null);
   const opRef     = useRef(0);
   const scaleRef  = useRef(0.05);
+
+  const figUniforms = useMemo(() => ({
+    map:      { value: texture },
+    uOpacity: { value: 0 },
+  }), [texture]);
 
   useFrame(({ camera }, delta) => {
     if (!groupRef.current) return;
@@ -1333,17 +1359,15 @@ function EnergyFigureScene({ texture }: { texture: THREE.Texture }) {
       ? (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START)
       : 0;
 
-    // Only appear AFTER camera fully exits Leo — no early appearance during ring phase
-    const APPEAR = 0.62; // just after camera passes through Leo
-    const FULL   = 0.78; // fully grown
-    const FADE   = 0.92; // HTML overlays take over from here
+    const APPEAR = 0.62;
+    const FULL   = 0.78;
+    const FADE   = 0.92;
 
     const target = exitT < APPEAR
       ? 0
       : THREE.MathUtils.smoothstep(exitT, APPEAR, FULL) *
         (1 - THREE.MathUtils.smoothstep(exitT, FADE, 1.0));
 
-    // Grow from a star-point (0.05) to full figure (1.0) as camera approaches
     const targetScale = exitT < APPEAR
       ? 0.05
       : 0.05 + THREE.MathUtils.smoothstep(exitT, APPEAR, FULL) * 0.95;
@@ -1351,7 +1375,7 @@ function EnergyFigureScene({ texture }: { texture: THREE.Texture }) {
     opRef.current    = THREE.MathUtils.damp(opRef.current,    target,      6, delta);
     scaleRef.current = THREE.MathUtils.damp(scaleRef.current, targetScale, 6, delta);
 
-    if (figMatRef.current) figMatRef.current.opacity = opRef.current;
+    if (figMatRef.current) figMatRef.current.uniforms.uOpacity.value = opRef.current;
     if (titleRef.current)  (titleRef.current  as any).fillOpacity = opRef.current;
     if (subRef.current)    (subRef.current    as any).fillOpacity = opRef.current;
     groupRef.current.scale.setScalar(scaleRef.current);
@@ -1364,15 +1388,14 @@ function EnergyFigureScene({ texture }: { texture: THREE.Texture }) {
       position={[ACT2_FIGURE_POS.x, ACT2_FIGURE_POS.y, ACT2_FIGURE_POS.z]}
       frustumCulled={false}
     >
-      {/* Additive blending: dark PNG background adds 0 → invisible; golden glow adds its color */}
       <mesh renderOrder={1}>
         <planeGeometry args={[34, 46]} />
-        <meshBasicMaterial
+        <shaderMaterial
           ref={figMatRef}
-          map={texture}
+          uniforms={figUniforms}
+          vertexShader={FIGURE_VERT}
+          fragmentShader={FIGURE_FRAG}
           transparent
-          alphaTest={0.05}
-          opacity={0}
           depthWrite={false}
           side={THREE.DoubleSide}
           blending={THREE.AdditiveBlending}
