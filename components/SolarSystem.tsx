@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Html, Sparkles, Stars, useTexture } from "@react-three/drei";
+import { Html, Sparkles, Stars, Text, useTexture } from "@react-three/drei";
 import { Bloom, ChromaticAberration, EffectComposer, Noise, Vignette } from "@react-three/postprocessing";
 import { BlendFunction } from "postprocessing";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -1318,44 +1318,79 @@ function ZodiacCircle() {
   );
 }
 
-function EnergyFigurePlane({ texture }: { texture: THREE.Texture }) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const opacityRef = useRef(0);
+function EnergyFigureScene({ texture }: { texture: THREE.Texture }) {
+  const groupRef  = useRef<THREE.Group>(null);
+  const figMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const titleRef  = useRef<THREE.Mesh>(null);
+  const subRef    = useRef<THREE.Mesh>(null);
+  const opRef     = useRef(0);
 
   useFrame(({ camera }, delta) => {
-    if (!meshRef.current) return;
+    if (!groupRef.current) return;
     const act2p = scrollState.act2Progress;
     const exitT = act2p >= ACT2_EXIT_START
       ? (act2p - ACT2_EXIT_START) / (1 - ACT2_EXIT_START)
       : 0;
-    const targetOpacity = exitT <= 0
+    const target = exitT <= 0
       ? 0
       : THREE.MathUtils.smoothstep(exitT, 0.18, 0.42) *
         (1 - THREE.MathUtils.smoothstep(exitT, 0.92, 1.0));
 
-    opacityRef.current = THREE.MathUtils.damp(opacityRef.current, targetOpacity, 5, delta);
-    (meshRef.current.material as THREE.MeshBasicMaterial).opacity = opacityRef.current;
-    meshRef.current.quaternion.copy(camera.quaternion);
+    opRef.current = THREE.MathUtils.damp(opRef.current, target, 5, delta);
+    if (figMatRef.current) figMatRef.current.opacity = opRef.current;
+    if (titleRef.current) (titleRef.current as any).fillOpacity = opRef.current;
+    if (subRef.current) (subRef.current as any).fillOpacity = opRef.current;
+    groupRef.current.quaternion.copy(camera.quaternion);
   });
 
   return (
-    <mesh
-      ref={meshRef}
+    <group
+      ref={groupRef}
       position={[ACT2_FIGURE_POS.x, ACT2_FIGURE_POS.y, ACT2_FIGURE_POS.z]}
-      renderOrder={1}
       frustumCulled={false}
     >
-      <planeGeometry args={[34, 46]} />
-      <meshBasicMaterial
-        map={texture}
-        transparent
-        opacity={0}
-        depthWrite={false}
-        depthTest
-        blending={THREE.NormalBlending}
-        toneMapped={false}
-      />
-    </mesh>
+      {/* Billboard figure — alphaTest discards dark PNG background pixels */}
+      <mesh renderOrder={1}>
+        <planeGeometry args={[34, 46]} />
+        <meshBasicMaterial
+          ref={figMatRef}
+          map={texture}
+          transparent
+          alphaTest={0.01}
+          opacity={0}
+          depthWrite={false}
+          depthTest
+          toneMapped={false}
+        />
+      </mesh>
+
+      {/* 3D text — positioned below the figure in billboard local space */}
+      <Text
+        ref={titleRef as any}
+        position={[0, -24.5, 0.5]}
+        fontSize={3.2}
+        color="#e8d5a8"
+        anchorX="center"
+        anchorY="top"
+        fillOpacity={0}
+        renderOrder={2}
+      >
+        Energija.
+      </Text>
+      <Text
+        ref={subRef as any}
+        position={[0, -29.5, 0.5]}
+        fontSize={1.15}
+        color="#a89878"
+        anchorX="center"
+        anchorY="top"
+        letterSpacing={0.28}
+        fillOpacity={0}
+        renderOrder={2}
+      >
+        NEBO JE MAPA. ENERGIJA JE PUT.
+      </Text>
+    </group>
   );
 }
 
@@ -1367,7 +1402,7 @@ function ZodiacChart({ energyFigureTexture }: { energyFigureTexture: THREE.Textu
       ))}
       <TrineNebula />
       <ZodiacCircle />
-      <EnergyFigurePlane texture={energyFigureTexture} />
+      <EnergyFigureScene texture={energyFigureTexture} />
     </group>
   );
 }
