@@ -13,10 +13,10 @@ export default function Header() {
       <div className="w-full pl-16 pr-6 min-h-16 py-3 flex items-center justify-between">
         <div className="mt-[33px]">
           <p className="font-serif italic text-[42px] md:text-[54px] text-text leading-tight">
-            Dragana Dokmanović
+            Astro Zvezdana Jovanović
           </p>
           <p className="font-mono text-[14px] tracking-[0.28em] text-text-subtle mt-0.5">
-            astrolog i energetski psiholog
+            astrolog i numerolog
           </p>
         </div>
 

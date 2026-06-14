@@ -85,7 +85,7 @@ type ZodiacStop = {
 
 // Act 2 ZODIAC_STOPS — timing aligned with SolarSystem.tsx ACT2_ELEMENT_* constants.
 // act2p = (p - 0.6) / 0.4; element stations at act2p [0.1875,0.325) [0.325,0.4625) [0.4625,0.60) [0.60,0.7375)
-// Finale at act2p [0.7375, 0.9375), exit fly-through at act2p >= 0.9375
+// Finale at act2p [0.7375, 0.8875); post-finale hold on ring view through act2p 1.0
 const ZODIAC_STOPS: ZodiacStop[] = [
   {
     id: "07",
