@@ -1790,8 +1790,10 @@ export default function SolarSystem() {
   const tiltRefs = useRef<TiltRefs>({
     targetX: 0, targetZ: 0, currentX: 0, currentZ: 0, enabled: false,
   });
-  const dragRefs = useRef<DragRefs>({ isDragging: false, lastX: 0, deltaX: 0, velocity: 0 });
-  const [cursor, setCursor] = useState("default");
+  const dragRefs  = useRef<DragRefs>({ isDragging: false, lastX: 0, deltaX: 0, velocity: 0 });
+  const [cursor,   setCursor]   = useState("default");
+  // isFinale drives overlay pointer-events reactively as the user scrolls
+  const [isFinale, setIsFinale] = useState(false);
 
   // Hover/fine pointer detection for tilt parallax
   useEffect(() => {
@@ -1799,10 +1801,7 @@ export default function SolarSystem() {
     const fineQuery  = window.matchMedia("(pointer: fine)");
     const update = () => {
       tiltRefs.current.enabled = hoverQuery.matches && fineQuery.matches;
-      if (!tiltRefs.current.enabled) {
-        tiltRefs.current.targetX = 0;
-        tiltRefs.current.targetZ = 0;
-      }
+      if (!tiltRefs.current.enabled) { tiltRefs.current.targetX = 0; tiltRefs.current.targetZ = 0; }
     };
     update();
     hoverQuery.addEventListener("change", update);
@@ -1813,108 +1812,79 @@ export default function SolarSystem() {
     };
   }, []);
 
-  // Touch handlers (non-passive touchmove allows preventDefault to block scroll during drag)
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const onTouchStart = (e: TouchEvent) => {
-      const a = scrollState.act2Progress;
-      if (a < ACT2_FINALE_START || a > ACT2_FINALE_END) return;
-      dragRefs.current.isDragging = true;
-      dragRefs.current.lastX  = e.touches[0].clientX;
-      dragRefs.current.deltaX = 0;
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (!dragRefs.current.isDragging) return;
-      e.preventDefault();
-      dragRefs.current.deltaX += e.touches[0].clientX - dragRefs.current.lastX;
-      dragRefs.current.lastX   = e.touches[0].clientX;
-    };
-    const onTouchEnd = () => { dragRefs.current.isDragging = false; };
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove",  onTouchMove,  { passive: false });
-    el.addEventListener("touchend",   onTouchEnd);
-    return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove",  onTouchMove);
-      el.removeEventListener("touchend",   onTouchEnd);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    const a = scrollState.act2Progress;
-    if (a < ACT2_FINALE_START || a > ACT2_FINALE_END) return;
+  // ── Overlay handlers (sit above Canvas — guaranteed first event priority) ────
+  const handleOverlayPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    console.log("drag started", { act2p: scrollState.act2Progress, isFinale });
     dragRefs.current.isDragging = true;
-    dragRefs.current.lastX  = e.clientX;
-    dragRefs.current.deltaX = 0;
-    if (e.pointerType !== "touch") {
-      e.currentTarget.setPointerCapture(e.pointerId);
-      setCursor("grabbing");
-    }
+    dragRefs.current.lastX      = e.clientX;
+    dragRefs.current.deltaX     = 0;
+    dragRefs.current.velocity   = 0;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setCursor("grabbing");
   };
 
-  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRefs.current.isDragging) {
-      dragRefs.current.deltaX += event.clientX - dragRefs.current.lastX;
-      dragRefs.current.lastX   = event.clientX;
-      return;
-    }
-    if (!tiltRefs.current.enabled || !containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = (event.clientX - rect.left) / rect.width - 0.5;
-    const y = (event.clientY - rect.top)  / rect.height - 0.5;
-    tiltRefs.current.targetZ = x * PARALLAX_GAIN;
-    tiltRefs.current.targetX = -y * PARALLAX_GAIN;
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleOverlayPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragRefs.current.isDragging) return;
+    e.preventDefault(); // prevent any browser drag-default behaviour
+    dragRefs.current.deltaX += e.clientX - dragRefs.current.lastX;
+    dragRefs.current.lastX   = e.clientX;
+  };
+
+  const handleOverlayPointerUp = () => {
     dragRefs.current.isDragging = false;
-    if (e.pointerType !== "touch") {
-      const a = scrollState.act2Progress;
-      setCursor(a >= ACT2_FINALE_START && a <= ACT2_FINALE_END ? "grab" : "default");
+    setCursor("grab");
+  };
+
+  const handleOverlayPointerLeave = () => {
+    // Only end drag if pointer actually leaves the overlay
+    if (dragRefs.current.isDragging) {
+      dragRefs.current.isDragging = false;
+      setCursor("grab");
     }
   };
 
-  const handlePointerLeave = () => {
+  // ── Container handlers (tilt parallax — only when overlay is pass-through) ──
+  const handleContainerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRefs.current.isDragging || !tiltRefs.current.enabled || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    tiltRefs.current.targetZ = ((e.clientX - rect.left) / rect.width  - 0.5) * PARALLAX_GAIN;
+    tiltRefs.current.targetX = -((e.clientY - rect.top)  / rect.height - 0.5) * PARALLAX_GAIN;
+  };
+
+  const handleContainerPointerLeave = () => {
     tiltRefs.current.targetX = 0;
     tiltRefs.current.targetZ = 0;
     dragRefs.current.isDragging = false;
-    setCursor("default");
+    setCursor(isFinale ? "grab" : "default");
   };
 
-  // Pause GPU when fully scrolled past; also drive grab cursor from scroll position
+  // Pause GPU when scrolled past; drive isFinale + grab cursor from scroll position
   const [frameloop, setFrameloop] = useState<"always" | "never">("always");
   useEffect(() => {
     let raf = 0;
     const onScroll = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        const act2p = scrollState.act2Progress;
-        const next: "always" | "never" = act2p >= 0.99 ? "never" : "always";
-        setFrameloop(prev => (prev === next ? prev : next));
-        if (!dragRefs.current.isDragging) {
-          const inFinale = act2p >= ACT2_FINALE_START && act2p <= ACT2_FINALE_END;
-          setCursor(inFinale ? "grab" : "default");
-        }
+        const act2p    = scrollState.act2Progress;
+        const inFinale = act2p >= ACT2_FINALE_START && act2p <= ACT2_FINALE_END;
+        setFrameloop(prev => {
+          const next: "always" | "never" = act2p >= 0.99 ? "never" : "always";
+          return prev === next ? prev : next;
+        });
+        setIsFinale(inFinale);
+        if (!dragRefs.current.isDragging) setCursor(inFinale ? "grab" : "default");
       });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      cancelAnimationFrame(raf);
-    };
+    return () => { window.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
   }, []);
 
   return (
     <div
       ref={containerRef}
-      className="h-full w-full"
-      style={{ cursor }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerLeave}
+      className="h-full w-full relative"
+      onPointerMove={handleContainerPointerMove}
+      onPointerLeave={handleContainerPointerLeave}
     >
       <Canvas
         frameloop={frameloop}
@@ -1927,6 +1897,21 @@ export default function SolarSystem() {
           <SceneContent tiltRefs={tiltRefs} dragRefs={dragRefs} />
         </Suspense>
       </Canvas>
+
+      {/* Drag overlay — sits above Canvas, only active during Celina finale.
+          touch-action:none prevents browser scroll during touch drag. */}
+      <div
+        className="absolute inset-0"
+        style={{
+          pointerEvents: isFinale ? "auto" : "none",
+          touchAction:   isFinale ? "none" : "auto",
+          cursor,
+        }}
+        onPointerDown={handleOverlayPointerDown}
+        onPointerMove={handleOverlayPointerMove}
+        onPointerUp={handleOverlayPointerUp}
+        onPointerLeave={handleOverlayPointerLeave}
+      />
     </div>
   );
 }
