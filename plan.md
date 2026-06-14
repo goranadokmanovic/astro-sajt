@@ -48,7 +48,7 @@ Svaka nova stavka ide na **vrh** liste „Urađeno", u formatu:
   - Dodat cursor asset `public/cursors/arrow.png`
   - Kreiran `plan.md` — dnevnik promena
 - **Fajlovi:** `components/Header.tsx`, `components/Footer.tsx`, `public/images/Logo Astro Zvezda transparent.png`, `public/cursors/arrow.png`, `plan.md`
-- **Status:** urađeno — commit u ovom push-u
+- **Status:** urađeno — commit `0f0ae1e`, push na GitHub
 
 ### 2026-06-14 — Portfolio verzija (Zvezdana)
 - **Šta:**
