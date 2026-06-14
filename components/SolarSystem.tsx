@@ -12,19 +12,29 @@ import { CONSTELLATIONS, ELEMENT_GROUPS } from "@/lib/zodiac";
 const BACKGROUND = "#0a0a14";
 const BASE_TILT = (25 * Math.PI) / 180;
 
-// Custom cursor for Celina finale drag — gold left-right arrow, 48×24px, hotspot 24 12
+// Custom cursor for Celina finale drag — cosmic gold glow arrow, 64×32px, hotspot 32 16
 const DRAG_CURSOR =
   "url(\"data:image/svg+xml," +
-  "%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='24' viewBox='0 0 48 24'%3E" +
-  "%3Cdefs%3E%3Cfilter id='s'%3E" +
-  "%3CfeDropShadow dx='0' dy='0.5' stdDeviation='1' flood-color='%23000' flood-opacity='0.75'/%3E" +
-  "%3C/filter%3E%3C/defs%3E" +
-  "%3Cg filter='url(%23s)' fill='none' stroke='%23d4a843' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E" +
-  "%3Cline x1='13' y1='12' x2='35' y2='12'/%3E" +
-  "%3Cpolyline points='13,7 4,12 13,17'/%3E" +
-  "%3Cpolyline points='35,7 44,12 35,17'/%3E" +
-  "%3C/g%3E%3C/svg%3E" +
-  "\") 24 12, ew-resize";
+  "%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='32' viewBox='0 0 64 32'%3E" +
+  "%3Cdefs%3E" +
+  "%3Cfilter id='glow' filterUnits='userSpaceOnUse' x='-8' y='-8' width='80' height='48'%3E" +
+  "%3CfeGaussianBlur stdDeviation='1.5' result='blur'/%3E" +
+  "%3CfeMerge%3E%3CfeMergeNode in='blur'/%3E%3CfeMergeNode in='SourceGraphic'/%3E%3C/feMerge%3E" +
+  "%3C/filter%3E" +
+  "%3C/defs%3E" +
+  "%3Cg filter='url(%23glow)' fill='none' stroke='%23d4a843' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E" +
+  "%3Cline x1='17' y1='16' x2='47' y2='16'/%3E" +
+  "%3Cpolyline points='17,11 8,16 17,21'/%3E" +
+  "%3Cpolyline points='47,11 56,16 47,21'/%3E" +
+  "%3C/g%3E" +
+  "%3Cg filter='url(%23glow)' fill='%23d4a843'%3E" +
+  "%3Cpath d='M12,3 L12.5,4.5 L14,5 L12.5,5.5 L12,7 L11.5,5.5 L10,5 L11.5,4.5 Z'/%3E" +
+  "%3Cpath d='M53,6 L53.5,7.5 L55,8 L53.5,8.5 L53,10 L52.5,8.5 L51,8 L52.5,7.5 Z'/%3E" +
+  "%3Cpath d='M20,25.5 L20.4,26.6 L21.5,27 L20.4,27.4 L20,28.5 L19.6,27.4 L18.5,27 L19.6,26.6 Z'/%3E" +
+  "%3Cpath d='M46,23 L46.5,24.5 L48,25 L46.5,25.5 L46,27 L45.5,25.5 L44,25 L45.5,24.5 Z'/%3E" +
+  "%3C/g%3E" +
+  "%3C/svg%3E" +
+  "\") 32 16, ew-resize";
 const MAX_PARALLAX = 0.05;
 const PARALLAX_GAIN = MAX_PARALLAX * 2;
 const DAMPING = 0.06;
