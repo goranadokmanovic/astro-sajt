@@ -15,29 +15,58 @@ const BASE_TILT = (25 * Math.PI) / 180;
 const DRAG_CURSOR = (() => {
   if (typeof document === "undefined") return "ew-resize";
   const cv = document.createElement("canvas");
-  cv.width = 64;
-  cv.height = 32;
+  cv.width = 80;
+  cv.height = 40;
   const ctx = cv.getContext("2d")!;
+
+  // Outer glow layer
   ctx.shadowColor = "#d4a843";
-  ctx.shadowBlur = 6;
-  ctx.strokeStyle = "#d4a843";
-  ctx.lineWidth = 2;
+  ctx.shadowBlur = 12;
+  ctx.strokeStyle = "rgba(212, 168, 67, 0.3)";
+  ctx.lineWidth = 4;
   ctx.lineCap = "round";
-  // left arrowhead
+
+  for (let i = 0; i < 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(22, 20); ctx.lineTo(6, 20);
+    ctx.moveTo(13, 13); ctx.lineTo(6, 20); ctx.lineTo(13, 27);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(58, 20); ctx.lineTo(74, 20);
+    ctx.moveTo(67, 13); ctx.lineTo(74, 20); ctx.lineTo(67, 27);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(22, 20); ctx.lineTo(36, 20);
+    ctx.moveTo(44, 20); ctx.lineTo(58, 20);
+    ctx.stroke();
+  }
+
+  // Bright inner line
+  ctx.shadowBlur = 4;
+  ctx.strokeStyle = "#ffd700";
+  ctx.lineWidth = 1.5;
+
   ctx.beginPath();
-  ctx.moveTo(20, 16); ctx.lineTo(6, 16);
-  ctx.moveTo(12, 9);  ctx.lineTo(6, 16); ctx.lineTo(12, 23);
+  ctx.moveTo(22, 20); ctx.lineTo(6, 20);
+  ctx.moveTo(13, 13); ctx.lineTo(6, 20); ctx.lineTo(13, 27);
   ctx.stroke();
-  // right arrowhead
   ctx.beginPath();
-  ctx.moveTo(44, 16); ctx.lineTo(58, 16);
-  ctx.moveTo(52, 9);  ctx.lineTo(58, 16); ctx.lineTo(52, 23);
+  ctx.moveTo(58, 20); ctx.lineTo(74, 20);
+  ctx.moveTo(67, 13); ctx.lineTo(74, 20); ctx.lineTo(67, 27);
   ctx.stroke();
-  // centre shaft
   ctx.beginPath();
-  ctx.moveTo(20, 16); ctx.lineTo(44, 16);
+  ctx.moveTo(22, 20); ctx.lineTo(36, 20);
+  ctx.moveTo(44, 20); ctx.lineTo(58, 20);
   ctx.stroke();
-  return `url(${cv.toDataURL()}) 32 16, ew-resize`;
+
+  // Center star point
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = "#ffd700";
+  ctx.beginPath();
+  ctx.arc(40, 20, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  return `url(${cv.toDataURL()}) 40 20, ew-resize`;
 })();
 const MAX_PARALLAX = 0.05;
 const PARALLAX_GAIN = MAX_PARALLAX * 2;
