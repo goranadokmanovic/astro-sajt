@@ -1907,6 +1907,7 @@ export default function SolarSystem() {
     <div
       ref={containerRef}
       className="h-full w-full relative"
+      style={{ background: BACKGROUND }}
       onPointerMove={handleContainerPointerMove}
       onPointerLeave={handleContainerPointerLeave}
     >

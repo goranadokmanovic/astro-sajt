@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 const SolarSystem = dynamic(() => import("./SolarSystem"), {
   ssr: false,
   loading: () => (
-    <div className="h-full w-full bg-background" aria-hidden="true" />
+    <div className="h-full w-full" style={{ background: "#0a0a14" }} aria-hidden="true" />
   ),
 });
 

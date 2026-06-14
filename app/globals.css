@@ -17,3 +17,9 @@ body {
   background: var(--color-background);
   color: var(--color-text);
 }
+
+canvas {
+  display: block;
+  outline: none;
+  border: none;
+}
