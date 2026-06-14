@@ -12,7 +12,33 @@ import { CONSTELLATIONS, ELEMENT_GROUPS } from "@/lib/zodiac";
 const BACKGROUND = "#0a0a14";
 const BASE_TILT = (25 * Math.PI) / 180;
 
-const DRAG_CURSOR = "url('/cursors/arrow.png') 32 16, ew-resize";
+const DRAG_CURSOR = (() => {
+  if (typeof document === "undefined") return "ew-resize";
+  const cv = document.createElement("canvas");
+  cv.width = 64;
+  cv.height = 32;
+  const ctx = cv.getContext("2d")!;
+  ctx.shadowColor = "#d4a843";
+  ctx.shadowBlur = 6;
+  ctx.strokeStyle = "#d4a843";
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  // left arrowhead
+  ctx.beginPath();
+  ctx.moveTo(20, 16); ctx.lineTo(6, 16);
+  ctx.moveTo(12, 9);  ctx.lineTo(6, 16); ctx.lineTo(12, 23);
+  ctx.stroke();
+  // right arrowhead
+  ctx.beginPath();
+  ctx.moveTo(44, 16); ctx.lineTo(58, 16);
+  ctx.moveTo(52, 9);  ctx.lineTo(58, 16); ctx.lineTo(52, 23);
+  ctx.stroke();
+  // centre shaft
+  ctx.beginPath();
+  ctx.moveTo(20, 16); ctx.lineTo(44, 16);
+  ctx.stroke();
+  return `url(${cv.toDataURL()}) 32 16, ew-resize`;
+})();
 const MAX_PARALLAX = 0.05;
 const PARALLAX_GAIN = MAX_PARALLAX * 2;
 const DAMPING = 0.06;
