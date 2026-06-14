@@ -1791,7 +1791,7 @@ export default function SolarSystem() {
     targetX: 0, targetZ: 0, currentX: 0, currentZ: 0, enabled: false,
   });
   const dragRefs  = useRef<DragRefs>({ isDragging: false, lastX: 0, deltaX: 0, velocity: 0 });
-  const [cursor,   setCursor]   = useState("default");
+  const [cursor,   setCursor]   = useState("auto");
   // isFinale drives overlay pointer-events reactively as the user scrolls
   const [isFinale, setIsFinale] = useState(false);
 
@@ -1820,7 +1820,7 @@ export default function SolarSystem() {
     dragRefs.current.deltaX     = 0;
     dragRefs.current.velocity   = 0;
     e.currentTarget.setPointerCapture(e.pointerId);
-    setCursor("grabbing");
+    setCursor("ew-resize");
   };
 
   const handleOverlayPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1832,14 +1832,14 @@ export default function SolarSystem() {
 
   const handleOverlayPointerUp = () => {
     dragRefs.current.isDragging = false;
-    setCursor("grab");
+    setCursor("ew-resize");
   };
 
   const handleOverlayPointerLeave = () => {
     // Only end drag if pointer actually leaves the overlay
     if (dragRefs.current.isDragging) {
       dragRefs.current.isDragging = false;
-      setCursor("grab");
+      setCursor("ew-resize");
     }
   };
 
@@ -1855,7 +1855,7 @@ export default function SolarSystem() {
     tiltRefs.current.targetX = 0;
     tiltRefs.current.targetZ = 0;
     dragRefs.current.isDragging = false;
-    setCursor(isFinale ? "grab" : "default");
+    setCursor(isFinale ? "ew-resize" : "auto");
   };
 
   // Pause GPU when scrolled past; drive isFinale + grab cursor from scroll position
@@ -1872,7 +1872,7 @@ export default function SolarSystem() {
           return prev === next ? prev : next;
         });
         setIsFinale(inFinale);
-        if (!dragRefs.current.isDragging) setCursor(inFinale ? "grab" : "default");
+        if (!dragRefs.current.isDragging) setCursor(inFinale ? "ew-resize" : "auto");
       });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
