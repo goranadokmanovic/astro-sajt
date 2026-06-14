@@ -42,6 +42,13 @@ type TiltRefs = {
   enabled: boolean;
 };
 
+type DragRefs = {
+  isDragging: boolean;
+  lastX:      number;
+  deltaX:     number; // px accumulated since last frame
+  velocity:   number; // smoothed rad/frame for inertia
+};
+
 type PlanetConfig = {
   radius: number;
   texture: TextureKey;
@@ -1589,8 +1596,16 @@ function Planet({ config, textures }: { config: PlanetConfig; textures: LoadedTe
   );
 }
 
-function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
+function SceneContent({
+  tiltRefs,
+  dragRefs,
+}: {
+  tiltRefs: React.RefObject<TiltRefs>;
+  dragRefs: React.RefObject<DragRefs>;
+}) {
   const systemRef       = useRef<THREE.Group>(null);
+  const ringRotRef      = useRef<THREE.Group>(null);
+  const yRotRef         = useRef(0);
   const textures        = usePlanetTextures();
   const camPos          = useRef(new THREE.Vector3(0, 4, 22));
   const camLook         = useRef(new THREE.Vector3(0, 0, 0));
@@ -1716,6 +1731,27 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
         keyLightRef.current.intensity, targetI, 4, delta,
       );
     }
+
+    // Celina finale — drag rotation + inertia
+    if (ringRotRef.current) {
+      const drag = dragRefs.current;
+      const inFinale = act2p >= ACT2_FINALE_START && act2p <= ACT2_FINALE_END;
+      if (inFinale && drag) {
+        if (drag.isDragging) {
+          const radDelta = drag.deltaX * 0.005;
+          drag.velocity  = drag.velocity * 0.7 + radDelta * 0.3;
+          yRotRef.current += radDelta;
+          drag.deltaX = 0;
+        } else {
+          drag.velocity  *= 0.95;
+          yRotRef.current += drag.velocity;
+        }
+      } else if (!inFinale) {
+        yRotRef.current = THREE.MathUtils.damp(yRotRef.current, 0, 2, delta);
+        if (drag) drag.velocity *= 0.6;
+      }
+      ringRotRef.current.rotation.y = yRotRef.current;
+    }
   });
 
   return (
@@ -1727,16 +1763,17 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
       {/* Act 2 chart glow — warm gold wash over the zodiac ring */}
       <pointLight ref={zodiacLightRef} color="#d4a843" intensity={0} distance={80} decay={1.2} />
 
-      <group ref={systemRef}>
-        <CosmicBackdrop />
-        <Sun sunTexture={textures.sun} />
-        <Moon moonTexture={textures.moon} />
-        {PLANETS.map((planet, index) => (
-          <Planet key={`planet-${index}`} config={planet} textures={textures} />
-        ))}
+      <group ref={ringRotRef}>
+        <group ref={systemRef}>
+          <CosmicBackdrop />
+          <Sun sunTexture={textures.sun} />
+          <Moon moonTexture={textures.moon} />
+          {PLANETS.map((planet, index) => (
+            <Planet key={`planet-${index}`} config={planet} textures={textures} />
+          ))}
+        </group>
+        <ZodiacChart />
       </group>
-
-      <ZodiacChart />
 
       <EffectComposer multisampling={0}>
         <Bloom intensity={0.7} luminanceThreshold={0.85} mipmapBlur />
@@ -1751,17 +1788,15 @@ function SceneContent({ tiltRefs }: { tiltRefs: React.RefObject<TiltRefs> }) {
 export default function SolarSystem() {
   const containerRef = useRef<HTMLDivElement>(null);
   const tiltRefs = useRef<TiltRefs>({
-    targetX: 0,
-    targetZ: 0,
-    currentX: 0,
-    currentZ: 0,
-    enabled: false,
+    targetX: 0, targetZ: 0, currentX: 0, currentZ: 0, enabled: false,
   });
+  const dragRefs = useRef<DragRefs>({ isDragging: false, lastX: 0, deltaX: 0, velocity: 0 });
+  const [cursor, setCursor] = useState("default");
 
+  // Hover/fine pointer detection for tilt parallax
   useEffect(() => {
     const hoverQuery = window.matchMedia("(hover: hover)");
     const fineQuery  = window.matchMedia("(pointer: fine)");
-
     const update = () => {
       tiltRefs.current.enabled = hoverQuery.matches && fineQuery.matches;
       if (!tiltRefs.current.enabled) {
@@ -1769,41 +1804,99 @@ export default function SolarSystem() {
         tiltRefs.current.targetZ = 0;
       }
     };
-
     update();
     hoverQuery.addEventListener("change", update);
     fineQuery.addEventListener("change", update);
-
     return () => {
       hoverQuery.removeEventListener("change", update);
       fineQuery.removeEventListener("change", update);
     };
   }, []);
 
+  // Touch handlers (non-passive touchmove allows preventDefault to block scroll during drag)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onTouchStart = (e: TouchEvent) => {
+      const a = scrollState.act2Progress;
+      if (a < ACT2_FINALE_START || a > ACT2_FINALE_END) return;
+      dragRefs.current.isDragging = true;
+      dragRefs.current.lastX  = e.touches[0].clientX;
+      dragRefs.current.deltaX = 0;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (!dragRefs.current.isDragging) return;
+      e.preventDefault();
+      dragRefs.current.deltaX += e.touches[0].clientX - dragRefs.current.lastX;
+      dragRefs.current.lastX   = e.touches[0].clientX;
+    };
+    const onTouchEnd = () => { dragRefs.current.isDragging = false; };
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove",  onTouchMove,  { passive: false });
+    el.addEventListener("touchend",   onTouchEnd);
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove",  onTouchMove);
+      el.removeEventListener("touchend",   onTouchEnd);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const a = scrollState.act2Progress;
+    if (a < ACT2_FINALE_START || a > ACT2_FINALE_END) return;
+    dragRefs.current.isDragging = true;
+    dragRefs.current.lastX  = e.clientX;
+    dragRefs.current.deltaX = 0;
+    if (e.pointerType !== "touch") {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setCursor("grabbing");
+    }
+  };
+
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRefs.current.isDragging) {
+      dragRefs.current.deltaX += event.clientX - dragRefs.current.lastX;
+      dragRefs.current.lastX   = event.clientX;
+      return;
+    }
     if (!tiltRefs.current.enabled || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width - 0.5;
-    const y = (event.clientY - rect.top) / rect.height - 0.5;
+    const y = (event.clientY - rect.top)  / rect.height - 0.5;
     tiltRefs.current.targetZ = x * PARALLAX_GAIN;
     tiltRefs.current.targetX = -y * PARALLAX_GAIN;
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRefs.current.isDragging) return;
+    dragRefs.current.isDragging = false;
+    if (e.pointerType !== "touch") {
+      const a = scrollState.act2Progress;
+      setCursor(a >= ACT2_FINALE_START && a <= ACT2_FINALE_END ? "grab" : "default");
+    }
   };
 
   const handlePointerLeave = () => {
     tiltRefs.current.targetX = 0;
     tiltRefs.current.targetZ = 0;
+    dragRefs.current.isDragging = false;
+    setCursor("default");
   };
 
-  // Pause GPU when fully past the 3D journey — resume when scrolled back.
+  // Pause GPU when fully scrolled past; also drive grab cursor from scroll position
   const [frameloop, setFrameloop] = useState<"always" | "never">("always");
   useEffect(() => {
     let raf = 0;
     const onScroll = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        const next: "always" | "never" =
-          scrollState.act2Progress >= 0.99 ? "never" : "always";
+        const act2p = scrollState.act2Progress;
+        const next: "always" | "never" = act2p >= 0.99 ? "never" : "always";
         setFrameloop(prev => (prev === next ? prev : next));
+        if (!dragRefs.current.isDragging) {
+          const inFinale = act2p >= ACT2_FINALE_START && act2p <= ACT2_FINALE_END;
+          setCursor(inFinale ? "grab" : "default");
+        }
       });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -1817,7 +1910,10 @@ export default function SolarSystem() {
     <div
       ref={containerRef}
       className="h-full w-full"
+      style={{ cursor }}
+      onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
     >
       <Canvas
@@ -1828,7 +1924,7 @@ export default function SolarSystem() {
         style={{ background: BACKGROUND }}
       >
         <Suspense fallback={null}>
-          <SceneContent tiltRefs={tiltRefs} />
+          <SceneContent tiltRefs={tiltRefs} dragRefs={dragRefs} />
         </Suspense>
       </Canvas>
     </div>
