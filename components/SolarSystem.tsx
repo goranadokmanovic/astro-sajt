@@ -11,6 +11,20 @@ import { CONSTELLATIONS, ELEMENT_GROUPS } from "@/lib/zodiac";
 
 const BACKGROUND = "#0a0a14";
 const BASE_TILT = (25 * Math.PI) / 180;
+
+// Custom cursor for Celina finale drag — gold left-right arrow, 48×24px, hotspot 24 12
+const DRAG_CURSOR =
+  "url(\"data:image/svg+xml," +
+  "%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='24' viewBox='0 0 48 24'%3E" +
+  "%3Cdefs%3E%3Cfilter id='s'%3E" +
+  "%3CfeDropShadow dx='0' dy='0.5' stdDeviation='1' flood-color='%23000' flood-opacity='0.75'/%3E" +
+  "%3C/filter%3E%3C/defs%3E" +
+  "%3Cg filter='url(%23s)' fill='none' stroke='%23d4a843' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E" +
+  "%3Cline x1='13' y1='12' x2='35' y2='12'/%3E" +
+  "%3Cpolyline points='13,7 4,12 13,17'/%3E" +
+  "%3Cpolyline points='35,7 44,12 35,17'/%3E" +
+  "%3C/g%3E%3C/svg%3E" +
+  "\") 24 12, ew-resize";
 const MAX_PARALLAX = 0.05;
 const PARALLAX_GAIN = MAX_PARALLAX * 2;
 const DAMPING = 0.06;
@@ -1820,7 +1834,7 @@ export default function SolarSystem() {
     dragRefs.current.deltaX     = 0;
     dragRefs.current.velocity   = 0;
     e.currentTarget.setPointerCapture(e.pointerId);
-    setCursor("ew-resize");
+    setCursor(DRAG_CURSOR);
   };
 
   const handleOverlayPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1832,14 +1846,14 @@ export default function SolarSystem() {
 
   const handleOverlayPointerUp = () => {
     dragRefs.current.isDragging = false;
-    setCursor("ew-resize");
+    setCursor(DRAG_CURSOR);
   };
 
   const handleOverlayPointerLeave = () => {
     // Only end drag if pointer actually leaves the overlay
     if (dragRefs.current.isDragging) {
       dragRefs.current.isDragging = false;
-      setCursor("ew-resize");
+      setCursor(DRAG_CURSOR);
     }
   };
 
@@ -1855,7 +1869,7 @@ export default function SolarSystem() {
     tiltRefs.current.targetX = 0;
     tiltRefs.current.targetZ = 0;
     dragRefs.current.isDragging = false;
-    setCursor(isFinale ? "ew-resize" : "auto");
+    setCursor(isFinale ? DRAG_CURSOR : "auto");
   };
 
   // Pause GPU when scrolled past; drive isFinale + grab cursor from scroll position
@@ -1872,7 +1886,7 @@ export default function SolarSystem() {
           return prev === next ? prev : next;
         });
         setIsFinale(inFinale);
-        if (!dragRefs.current.isDragging) setCursor(inFinale ? "ew-resize" : "auto");
+        if (!dragRefs.current.isDragging) setCursor(inFinale ? DRAG_CURSOR : "auto");
       });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
