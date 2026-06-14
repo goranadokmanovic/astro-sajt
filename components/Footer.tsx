@@ -7,7 +7,7 @@ export default function Footer() {
           Natalne karte · Astrologija
         </p>
         <p className="font-mono text-[10px] tracking-[0.2em] text-text-subtle uppercase mt-8">
-          © 2026 · Sajt: MyNestOf4
+          © 2026 · Sajt: Gorana Dokmanović
         </p>
       </div>
     </footer>
