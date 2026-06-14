@@ -1160,14 +1160,13 @@ function ZodiacConstellation({ ci }: { ci: number }) {
       targetScale = 4.5;
     }
 
-    // Finale halo tone-down: smaller sprites + lower glow multiplier so the soft halo
-    // disc retreats. Cores and spikes are unchanged (they dominate at any size).
-    // Halo energy at finale ≈ 54 % of active station ≈ roughly half as requested.
+    // Celina finale boost: full brightness, 1.5× sprite size, stronger glow so every
+    // constellation star reads clearly against background stars in the ring overview.
     const isFinaleAll    = act2p >= ACT2_FINALE_START;
     const isActiveTriple = featured && !isFinaleAll; // active trio at a station only
-    const finaleGlowMult = isFinaleAll ? 0.85 : 1.0;
-    let targetAnchorPx = isFinaleAll ? 68 : (isActiveTriple ? 80 : 50);
-    let targetNormalPx = isFinaleAll ? 34 : (isActiveTriple ? 40 : 25);
+    const finaleGlowMult = isFinaleAll ? 1.2 : 1.0;
+    let targetAnchorPx = isFinaleAll ? 102 : (isActiveTriple ? 80 : 50);
+    let targetNormalPx = isFinaleAll ? 51  : (isActiveTriple ? 40 : 25);
 
     // Line opacity: focus-only logic.
     // Intro: all lines fade in with their constellation.
@@ -1183,12 +1182,12 @@ function ZodiacConstellation({ ci }: { ci: number }) {
 
     if (anchorRef.current) {
       const mat = anchorRef.current.material as THREE.PointsMaterial;
-      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle * finaleGlowMult, 5, delta);
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, Math.min(1, base * twinkle * finaleGlowMult), 5, delta);
       mat.size    = THREE.MathUtils.damp(mat.size, targetAnchorPx, 4, delta);
     }
     if (normalRef.current) {
       const mat = normalRef.current.material as THREE.PointsMaterial;
-      mat.opacity = THREE.MathUtils.damp(mat.opacity, base * twinkle * 0.85 * finaleGlowMult, 5, delta);
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, Math.min(1, base * twinkle * 0.85 * finaleGlowMult), 5, delta);
       mat.size    = THREE.MathUtils.damp(mat.size, targetNormalPx, 4, delta);
     }
     if (linesRef.current) {
