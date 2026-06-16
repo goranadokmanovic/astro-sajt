@@ -72,6 +72,9 @@ const MAX_PARALLAX = 0.05;
 const PARALLAX_GAIN = MAX_PARALLAX * 2;
 const DAMPING = 0.06;
 const PULSE_OMEGA = (Math.PI * 2) / 4;
+const ZODIAC_ROTATION_LERP = 0.05;
+const ZODIAC_ROTATION_SPEED = 0.005;
+const ACT2_KRUG_END = 0.9375; // page p=0.975 mapped through act2Progress=(p-0.6)/0.4
 
 const TEXTURE_PATHS = {
   sun: "/textures/planets/sun.jpg",
@@ -104,6 +107,15 @@ type DragRefs = {
   lastX:      number;
   deltaX:     number; // px accumulated since last frame
   velocity:   number; // smoothed rad/frame for inertia
+};
+
+const ZODIAC_MOUSE = {
+  active: false,
+  hasLast: false,
+  lastX: 0,
+  lastY: 0,
+  deltaX: 0,
+  deltaY: 0,
 };
 
 type PlanetConfig = {
@@ -1352,8 +1364,32 @@ function ZodiacCircle() {
 }
 
 function ZodiacChart() {
+  const groupRef = useRef<THREE.Group>(null);
+  const currentRotX = useRef(0);
+  const currentRotY = useRef(0);
+  const targetRotX = useRef(0);
+  const targetRotY = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!groupRef.current) return;
+    if (ZODIAC_MOUSE.active) {
+      targetRotY.current += ZODIAC_MOUSE.deltaX * ZODIAC_ROTATION_SPEED;
+      targetRotX.current += ZODIAC_MOUSE.deltaY * ZODIAC_ROTATION_SPEED;
+      ZODIAC_MOUSE.deltaX = 0;
+      ZODIAC_MOUSE.deltaY = 0;
+    } else {
+      targetRotX.current = THREE.MathUtils.damp(targetRotX.current, 0, 2, delta);
+      targetRotY.current = THREE.MathUtils.damp(targetRotY.current, 0, 2, delta);
+    }
+
+    currentRotX.current = THREE.MathUtils.lerp(currentRotX.current, targetRotX.current, ZODIAC_ROTATION_LERP);
+    currentRotY.current = THREE.MathUtils.lerp(currentRotY.current, targetRotY.current, ZODIAC_ROTATION_LERP);
+    groupRef.current.rotation.x = currentRotX.current;
+    groupRef.current.rotation.y = currentRotY.current;
+  });
+
   return (
-    <group>
+    <group ref={groupRef}>
       {CONSTELLATIONS.map((_, ci) => (
         <ZodiacConstellation key={`z-${ci}`} ci={ci} />
       ))}
@@ -1654,14 +1690,10 @@ function Planet({ config, textures }: { config: PlanetConfig; textures: LoadedTe
 
 function SceneContent({
   tiltRefs,
-  dragRefs,
 }: {
   tiltRefs: React.RefObject<TiltRefs>;
-  dragRefs: React.RefObject<DragRefs>;
 }) {
   const systemRef       = useRef<THREE.Group>(null);
-  const ringRotRef      = useRef<THREE.Group>(null);
-  const yRotRef         = useRef(0);
   const textures        = usePlanetTextures();
   const camPos          = useRef(new THREE.Vector3(0, 4, 22));
   const camLook         = useRef(new THREE.Vector3(0, 0, 0));
@@ -1788,26 +1820,6 @@ function SceneContent({
       );
     }
 
-    // Celina finale — drag rotation + inertia
-    if (ringRotRef.current) {
-      const drag = dragRefs.current;
-      const inFinale = act2p >= ACT2_FINALE_START && act2p <= ACT2_FINALE_END;
-      if (inFinale && drag) {
-        if (drag.isDragging) {
-          const radDelta = drag.deltaX * 0.005;
-          drag.velocity  = drag.velocity * 0.7 + radDelta * 0.3;
-          yRotRef.current += radDelta;
-          drag.deltaX = 0;
-        } else {
-          drag.velocity  *= 0.95;
-          yRotRef.current += drag.velocity;
-        }
-      } else if (!inFinale) {
-        yRotRef.current = THREE.MathUtils.damp(yRotRef.current, 0, 2, delta);
-        if (drag) drag.velocity *= 0.6;
-      }
-      ringRotRef.current.rotation.y = yRotRef.current;
-    }
   });
 
   return (
@@ -1819,7 +1831,7 @@ function SceneContent({
       {/* Act 2 chart glow — warm gold wash over the zodiac ring */}
       <pointLight ref={zodiacLightRef} color="#d4a843" intensity={0} distance={80} decay={1.2} />
 
-      <group ref={ringRotRef}>
+      <group>
         <group ref={systemRef}>
           <CosmicBackdrop />
           <Sun sunTexture={textures.sun} />
@@ -1846,7 +1858,12 @@ export default function SolarSystem() {
   const tiltRefs = useRef<TiltRefs>({
     targetX: 0, targetZ: 0, currentX: 0, currentZ: 0, enabled: false,
   });
-  const dragRefs  = useRef<DragRefs>({ isDragging: false, lastX: 0, deltaX: 0, velocity: 0 });
+  const dragRefs  = useRef<DragRefs>({
+    isDragging: false,
+    lastX: 0,
+    deltaX: 0,
+    velocity: 0,
+  });
   const [cursor,   setCursor]   = useState("auto");
   // isFinale drives overlay pointer-events reactively as the user scrolls
   const [isFinale, setIsFinale] = useState(false);
@@ -1901,6 +1918,16 @@ export default function SolarSystem() {
 
   // ── Container handlers (tilt parallax — only when overlay is pass-through) ──
   const handleContainerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (ZODIAC_MOUSE.active) {
+      if (ZODIAC_MOUSE.hasLast) {
+        ZODIAC_MOUSE.deltaX += e.clientX - ZODIAC_MOUSE.lastX;
+        ZODIAC_MOUSE.deltaY += e.clientY - ZODIAC_MOUSE.lastY;
+      }
+      ZODIAC_MOUSE.lastX = e.clientX;
+      ZODIAC_MOUSE.lastY = e.clientY;
+      ZODIAC_MOUSE.hasLast = true;
+    }
+
     if (dragRefs.current.isDragging || !tiltRefs.current.enabled || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     tiltRefs.current.targetZ = ((e.clientX - rect.left) / rect.width  - 0.5) * PARALLAX_GAIN;
@@ -1911,6 +1938,7 @@ export default function SolarSystem() {
     tiltRefs.current.targetX = 0;
     tiltRefs.current.targetZ = 0;
     dragRefs.current.isDragging = false;
+    ZODIAC_MOUSE.hasLast = false;
     setCursor(isFinale ? DRAG_CURSOR : "auto");
   };
 
@@ -1922,13 +1950,19 @@ export default function SolarSystem() {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         const act2p    = scrollState.act2Progress;
-        const inFinale = act2p >= ACT2_FINALE_START && act2p <= ACT2_FINALE_END;
+        const inKrug = act2p >= ACT2_FINALE_START && act2p <= ACT2_KRUG_END;
+        ZODIAC_MOUSE.active = inKrug;
+        if (!inKrug) {
+          ZODIAC_MOUSE.hasLast = false;
+          ZODIAC_MOUSE.deltaX = 0;
+          ZODIAC_MOUSE.deltaY = 0;
+        }
         setFrameloop(prev => {
           const next: "always" | "never" = act2p >= 0.99 ? "never" : "always";
           return prev === next ? prev : next;
         });
-        setIsFinale(inFinale);
-        if (!dragRefs.current.isDragging) setCursor(inFinale ? DRAG_CURSOR : "auto");
+        setIsFinale(false);
+        if (!dragRefs.current.isDragging) setCursor("auto");
       });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -1951,7 +1985,7 @@ export default function SolarSystem() {
         style={{ background: BACKGROUND }}
       >
         <Suspense fallback={null}>
-          <SceneContent tiltRefs={tiltRefs} dragRefs={dragRefs} />
+          <SceneContent tiltRefs={tiltRefs} />
         </Suspense>
       </Canvas>
 

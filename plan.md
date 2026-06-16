@@ -36,6 +36,18 @@ Svaka nova stavka ide na **vrh** liste „Urađeno", u formatu:
 
 ## Urađeno
 
+### 2026-06-16 — KRUG: sferna rotacija zodijaka mišem
+- **Šta:**
+  - U sekciji **KRUG** (Celina finale, `act2Progress` 0.875–0.9375) ceo `ZodiacChart` se rotira po X/Y prati miš
+  - Lerp `0.05`, brzina `0.005`, bez vertikalnog clamp-a — puna sferna rotacija
+  - Pasivan `mousemove` na kontejneru (`ZODIAC_MOUSE`); ne blokira scroll
+  - Uklonjena stara Y-only drag rotacija (`ringRotRef` / `dragRefs` u `SceneContent`)
+  - Drag overlay i custom kursor isključeni tokom KRUG-a (`setIsFinale(false)`)
+  - **Luxury vizuelni efekti** (strelicе, twinkle, shooting stars, parallax) probani i **vraćeni** — nisu u kodu
+- **Fajlovi:** `components/SolarSystem.tsx`, `plan.md`
+- **Status:** urađeno
+- **Commit:** `43a7376`
+
 ### 2026-06-14 — Header rebrand, scroll pozadina, plan.md, git push
 - **Šta:**
   - Novi transparentni logo (`Logo Astro Zvezda transparent.png`)
@@ -72,7 +84,16 @@ Svaka nova stavka ide na **vrh** liste „Urađeno", u formatu:
 
 ## U toku / nije commit-ovano
 
-*(nema — sve je u commit-u)*
+*(nema — sve je u commit-u posle push-a 2026-06-16)*
+
+---
+
+## Odbijeno / vraćeno
+
+### 2026-06-16 — Premium luxury vizuelni efekti
+- **Šta:** Zlatne scroll strelice, twinkling zvezde, planet glow pulse, shooting stars, depth parallax
+- **Status:** implementirano pa **vraćeno** na zahtev — nije u repou
+- **Napomena:** Scroll, kamera, tekst i struktura sekcija nisu dirani tokom eksperimenta
 
 ---
 
