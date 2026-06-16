@@ -19,7 +19,7 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "Astro Zvezdana Jovanović — Natalne karte",
+  title: "Astro Zvezdana Mladjenović — Natalne karte",
   description:
     "Astrološke konsultacije, natalna karta i energetska mapa vašeg života.",
 };

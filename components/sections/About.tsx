@@ -17,7 +17,7 @@ export default function About() {
             <h2 className="font-serif italic text-4xl md:text-5xl text-text leading-tight">
               <RevealWords text="Astro Zvezdana" />
               <br />
-              <RevealWords text="Jovanović." className="text-text-muted" delay={0.1} />
+              <RevealWords text="Mladjenović." className="text-text-muted" delay={0.1} />
             </h2>
 
             <Reveal delay={0.2}>

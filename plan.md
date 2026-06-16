@@ -36,6 +36,12 @@ Svaka nova stavka ide na **vrh** liste „Urađeno", u formatu:
 
 ## Urađeno
 
+### 2026-06-16 — Rebrand prezimena: Mladjenović
+- **Šta:** Ime **Zvezdana Jovanović** zamenjeno sa **Zvezdana Mladjenović** na celom sajtu (header, footer, `<title>`, About sekcija)
+- **Fajlovi:** `components/Header.tsx`, `components/Footer.tsx`, `app/layout.tsx`, `components/sections/About.tsx`, `plan.md`
+- **Status:** urađeno
+- **Commit:** `289562f`
+
 ### 2026-06-16 — KRUG: sferna rotacija zodijaka mišem
 - **Šta:**
   - U sekciji **KRUG** (Celina finale, `act2Progress` 0.875–0.9375) ceo `ZodiacChart` se rotira po X/Y prati miš

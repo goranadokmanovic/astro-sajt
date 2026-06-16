@@ -76,7 +76,7 @@ export default function Header() {
                   : "text-[42px] md:text-[54px]"
               }`}
             >
-              Zvezdana Jovanović
+              Zvezdana Mladjenović
             </p>
             <p className="font-mono text-[14px] tracking-[0.28em] text-text-subtle mt-0.5">
               astrolog i numerolog
