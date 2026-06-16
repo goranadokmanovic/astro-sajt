@@ -40,7 +40,7 @@ Svaka nova stavka ide na **vrh** liste „Urađeno", u formatu:
 - **Šta:** Ime **Zvezdana Jovanović** zamenjeno sa **Zvezdana Mladjenović** na celom sajtu (header, footer, `<title>`, About sekcija)
 - **Fajlovi:** `components/Header.tsx`, `components/Footer.tsx`, `app/layout.tsx`, `components/sections/About.tsx`, `plan.md`
 - **Status:** urađeno
-- **Commit:** `289562f`
+- **Commit:** `5164ac4`
 
 ### 2026-06-16 — KRUG: sferna rotacija zodijaka mišem
 - **Šta:**
