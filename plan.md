@@ -46,7 +46,7 @@ Svaka nova stavka ide na **vrh** liste „Urađeno", u formatu:
   - **Luxury vizuelni efekti** (strelicе, twinkle, shooting stars, parallax) probani i **vraćeni** — nisu u kodu
 - **Fajlovi:** `components/SolarSystem.tsx`, `plan.md`
 - **Status:** urađeno
-- **Commit:** `43a7376`
+- **Commit:** `9603540`
 
 ### 2026-06-14 — Header rebrand, scroll pozadina, plan.md, git push
 - **Šta:**
